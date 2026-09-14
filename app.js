@@ -204,7 +204,6 @@
       location.hash = route('catalogo', q ? {q} : {}).slice(1);
     });
     bindRegionHover(document.querySelector('.territory-section'));
-    bindData();
   }
 
   function bindRegionHover(container) {
@@ -234,59 +233,158 @@
     });
   }
 
-  // Presentation contract only. Values remain absent until verified series are supplied.
-  const indicatorDefinitions = [
-    {id:'calor',label:'Calor extremo'}, {id:'mp25',label:'Calidad del aire'},
-    {id:'as',label:'Arsénico en agua'}, {id:'inc',label:'Incendios'},
-    {id:'mort',label:'Mortalidad atribuible'}
-  ];
-  function dataSection() {
-    return `<section class="home-section data-section" id="datos"><div class="shell"><p class="eyebrow">04 / Datos</p><h2>El territorio también habla en cifras.</h2><p class="section-lede">Indicadores y series regionales. Información en preparación.</p><div class="indicator-tabs" role="tablist" aria-label="Indicadores ambientales">${indicatorDefinitions.map((ind,i)=>`<button type="button" role="tab" id="tab-${ind.id}" aria-controls="indicator-panel" aria-selected="${i===0}" tabindex="${i===0?0:-1}" data-indicator="${ind.id}">${ind.label}</button>`).join('')}</div><div id="indicator-panel" role="tabpanel" aria-labelledby="tab-calor"></div></div></section>`;
-  }
-  function bindData() {
-    const container = document.querySelector('.data-section');
-    if (!container) return;
-    let indicator = 'calor', selectedRegion = 'coquimbo';
-    const tabs = [...container.querySelectorAll('[role="tab"]')];
-    const panel = container.querySelector('[role="tabpanel"]');
-    const render = () => {
-      const definition = indicatorDefinitions.find(i=>i.id===indicator);
-      const selected = regions.find(r=>r.id===selectedRegion);
-      // Future adapter supplies a verified source/year and per-region value/series.
-      const supplied = window.BIBLIOTECA_INDICADORES?.[indicator];
-      const verified = supplied?.source && supplied?.year ? supplied : null;
-      const record = id => verified?.regions?.[id];
-      const valueOf = id => Number.isFinite(record(id)?.value) ? record(id).value : null;
-      const detailFor = regionId => {
-      const selected = regions.find(r=>r.id===regionId);
-      const current = record(regionId);
-      const series = (current?.series || []).filter(p=>Number.isFinite(p.year) && Number.isFinite(p.value));
-      const peak = Math.max(...series.map(p=>Math.abs(p.value)),1);
-      const detail = `<h3>${esc(selected?.name || '')}</h3><p class="meta">${esc(definition.label)}${verified ? ` · ${esc(verified.year)}` : ''}</p><p class="data-value">${valueOf(regionId)==null ? '—' : esc(valueOf(regionId).toLocaleString('es-CL'))}<span>${verified ? esc(verified.unit || '') : 'Sin datos disponibles'}</span></p><div class="series-area">${series.length ? `<div class="series-bars" role="img" aria-label="${esc(series.map(p=>`${p.year}: ${p.value}`).join('; '))}">${series.map(p=>`<span style="height:${Math.abs(p.value)/peak*100}%" title="${esc(p.year)}: ${esc(p.value)}"></span>`).join('')}</div><div class="series-years"><span>${series[0].year}</span><span>${series.at(-1).year}</span></div>` : '<p>Serie histórica pendiente de incorporación.</p>'}</div><p class="data-source">${verified ? `Fuente: ${esc(verified.source)}` : 'Fuente y período por confirmar.'}</p>`;
-      return detail;
-      };
-      const detail = detailFor(selectedRegion);
-      panel.setAttribute('aria-labelledby',`tab-${indicator}`);
-      panel.innerHTML = `<div class="data-layout"><div class="data-map-wrap">${regionMap(regions.map(r=>({...r,value:valueOf(r.id)})), 'data')}<div class="map-legend"><span class="no-data-key">Sin datos</span></div>${mapCredit}</div><div class="data-detail-wrap"><label class="region-select-label" for="data-region">Región<select id="data-region">${regions.map(r=>`<option value="${r.id}" ${r.id===selectedRegion?'selected':''}>${esc(r.name)}</option>`).join('')}</select></label><div class="data-detail" aria-live="polite">${detail}</div></div></div>`;
-      panel.querySelector(`[data-region="${selectedRegion}"]`)?.classList.add('region-selected');
-      const choose = id => { selectedRegion=id; render(); panel.querySelector('#data-region').focus({preventScroll:true}); };
-      panel.querySelector('#data-region').addEventListener('change',e=>{ selectedRegion=e.target.value; render(); panel.querySelector('#data-region').focus({preventScroll:true}); });
-      panel.querySelectorAll('[data-region]').forEach(el=>{
-        el.addEventListener('mouseenter',()=>{ panel.querySelector('.data-detail').innerHTML=detailFor(el.dataset.region); });
-        el.addEventListener('mouseleave',()=>{ panel.querySelector('.data-detail').innerHTML=detailFor(selectedRegion); });
-        el.addEventListener('click',()=>choose(el.dataset.region));
-        el.addEventListener('keydown',e=>{ if(e.key==='Enter'||e.key===' '){e.preventDefault();choose(el.dataset.region);} });
-      });
-      bindRegionHover(panel);
-    };
-    tabs.forEach((tab,index)=>{
-      tab.addEventListener('click',()=>{indicator=tab.dataset.indicator;tabs.forEach(t=>{t.setAttribute('aria-selected',String(t===tab));t.tabIndex=t===tab?0:-1;});render();});
-      tab.addEventListener('keydown',e=>{
-        const next=e.key==='ArrowRight'?(index+1)%tabs.length:e.key==='ArrowLeft'?(index+tabs.length-1)%tabs.length:e.key==='Home'?0:e.key==='End'?tabs.length-1:null;
-        if(next!==null){e.preventDefault();tabs[next].click();tabs[next].focus();}
-      });
+  const pm25Payload = window.BIBLIOTECA_PM25 || null;
+  const pm25Number = value => Number.isFinite(value) ? value.toLocaleString('es-CL', {minimumFractionDigits:1,maximumFractionDigits:1}) : 's/d';
+  const pm25Slug = value => norm(value).replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
+  const pm25Annual = (capital, year) => capital.series.find(point => point.year === year);
+  const pm25Quality = {validado:'Validado',mixto:'Mixto',preliminar:'Preliminar',insuficiente:'Insuficiente'};
+
+  function pm25Segments(capital, years, width, height, maxValue, padding = 3) {
+    const x = index => padding + index * ((width-padding*2) / Math.max(years.length-1,1));
+    const y = value => height-padding-(value/maxValue)*(height-padding*2);
+    const segments = [];
+    let current = [];
+    years.forEach((year,index)=>{
+      const point = pm25Annual(capital,year);
+      if (Number.isFinite(point?.value)) current.push([x(index),y(point.value)]);
+      else if (current.length) { segments.push(current); current=[]; }
     });
-    render();
+    if (current.length) segments.push(current);
+    return segments;
+  }
+
+  function pm25Sparkline(capital) {
+    const years = Array.from({length:13},(_,index)=>2013+index);
+    const maxValue = Math.max(...capital.series.filter(point=>years.includes(point.year)&&Number.isFinite(point.value)).map(point=>point.value),1);
+    const lines = pm25Segments(capital,years,112,30,maxValue).map(points=>`<polyline points="${points.map(point=>point.join(',')).join(' ')}"/>`).join('');
+    return `<svg class="pm25-sparkline" viewBox="0 0 112 30" role="img" aria-label="Tendencia anual 2013 a 2025 de ${esc(capital.name)}">${lines}</svg>`;
+  }
+
+  function pm25DetailChart(capital) {
+    const years = Array.from({length:14},(_,index)=>2013+index);
+    const width=760,height=260,left=46,right=22,top=20,bottom=38;
+    const observed=capital.series.filter(point=>point.year>=2013&&point.year<=2026&&Number.isFinite(point.value)).map(point=>point.value);
+    const maxValue=Math.max(40,Math.ceil(Math.max(...observed,1)/10)*10);
+    const gridStep=maxValue<=40?10:20;
+    const gridValues=Array.from({length:Math.floor(maxValue/gridStep)+1},(_,index)=>index*gridStep);
+    if(gridValues.at(-1)!==maxValue) gridValues.push(maxValue);
+    const chartWidth=width-left-right,chartHeight=height-top-bottom;
+    const x = year => left+(year-2013)*(chartWidth/13);
+    const y = value => top+chartHeight-(value/maxValue)*chartHeight;
+    const completeYears=years.slice(0,-1);
+    const completeSegments=[];
+    let completeCurrent=[];
+    completeYears.forEach(year=>{
+      const point=pm25Annual(capital,year);
+      if(Number.isFinite(point?.value)) completeCurrent.push([x(year),y(point.value)]);
+      else if(completeCurrent.length){completeSegments.push(completeCurrent);completeCurrent=[];}
+    });
+    if(completeCurrent.length) completeSegments.push(completeCurrent);
+    const completeLines=completeSegments.map(points=>`<polyline class="pm25-chart-line" points="${points.map(point=>point.join(',')).join(' ')}"/>`).join('');
+    const points=completeYears.map(year=>pm25Annual(capital,year)).filter(point=>Number.isFinite(point?.value));
+    const last=pm25Annual(capital,2025),ytd=pm25Annual(capital,2026);
+    const ytdConnector=Number.isFinite(last?.value)&&Number.isFinite(ytd?.value)?`<line class="pm25-ytd-connector" x1="${x(2025)}" y1="${y(last.value)}" x2="${x(2026)}" y2="${y(ytd.value)}"/>`:'';
+    const dots=points.map(point=>`<circle cx="${x(point.year)}" cy="${y(point.value)}" r="3"><title>${point.year}: ${pm25Number(point.value)} µg/m³</title></circle>`).join('');
+    const ytdDot=Number.isFinite(ytd?.value)?`<circle class="pm25-ytd-dot" cx="${x(2026)}" cy="${y(ytd.value)}" r="5"><title>2026 YTD provisional: ${pm25Number(ytd.value)} µg/m³</title></circle>`:'';
+    return `<svg class="pm25-detail-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="Serie anual de PM2.5 en ${esc(capital.name)}; 2013 a 2025 son años completos y 2026 es YTD provisional">
+      <rect class="pm25-ytd-band" x="${x(2026)-chartWidth/26}" y="0" width="${chartWidth/13+right}" height="${height}"/>
+      ${gridValues.map(value=>`<g class="pm25-grid"><line x1="${left}" y1="${y(value)}" x2="${width-right}" y2="${y(value)}"/><text x="${left-9}" y="${y(value)+4}">${value}</text></g>`).join('')}
+      ${completeLines}${ytdConnector}<g class="pm25-chart-points">${dots}${ytdDot}</g>
+      ${[2013,2017,2021,2025].map(year=>`<text class="pm25-year-label" x="${x(year)}" y="${height-10}">${year}</text>`).join('')}
+      <text class="pm25-year-label pm25-ytd-label" x="${x(2026)}" y="${height-10}">2026 YTD</text>
+      <text class="pm25-axis-title" transform="translate(13 ${height/2}) rotate(-90)">PM2.5 (µg/m³)</text>
+    </svg>`;
+  }
+
+  function pm25ComparisonChart(capitals, selectedName) {
+    const years=Array.from({length:13},(_,index)=>2013+index),width=1120,height=390,left=48,right=28,top=26,bottom=42;
+    const observed=capitals.flatMap(capital=>capital.series.filter(point=>years.includes(point.year)&&Number.isFinite(point.value)).map(point=>point.value));
+    const maxValue=Math.max(40,Math.ceil(Math.max(...observed,1)/10)*10);
+    const gridStep=maxValue<=40?10:20;
+    const gridValues=Array.from({length:Math.floor(maxValue/gridStep)+1},(_,index)=>index*gridStep);
+    if(gridValues.at(-1)!==maxValue) gridValues.push(maxValue);
+    const chartWidth=width-left-right,chartHeight=height-top-bottom;
+    const paths=capitals.map(capital=>{
+      const selected=capital.name===selectedName;
+      return pm25Segments(capital,years,chartWidth,chartHeight,maxValue,0).map(points=>`<polyline class="${selected?'is-selected':''}" points="${points.map(([px,py])=>`${px+left},${py+top}`).join(' ')}"><title>${esc(capital.name)}</title></polyline>`).join('');
+    }).join('');
+    return `<svg class="pm25-comparison-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="Comparación de promedios anuales de PM2.5 entre capitales regionales, 2013 a 2025">
+      ${gridValues.map(value=>`<g class="pm25-grid"><line x1="${left}" y1="${top+chartHeight-(value/maxValue)*chartHeight}" x2="${width-right}" y2="${top+chartHeight-(value/maxValue)*chartHeight}"/><text x="${left-10}" y="${top+chartHeight-(value/maxValue)*chartHeight+4}">${value}</text></g>`).join('')}
+      <g class="pm25-comparison-lines">${paths}</g>
+      ${[2013,2015,2017,2019,2021,2023,2025].map(year=>`<text class="pm25-year-label" x="${left+(year-2013)*(chartWidth/12)}" y="${height-12}">${year}</text>`).join('')}
+      <text class="pm25-axis-title" transform="translate(13 ${height/2}) rotate(-90)">PM2.5 (µg/m³)</text>
+    </svg>`;
+  }
+
+  function pm25Csv(capitals) {
+    const header=['region_code','capital','region','macrozona','year','year_type','annual_mean_ugm3','classification','coverage_pct','n_days_with_data','days_in_period','station_ids_used'];
+    const quote=value=>`"${String(value??'').replaceAll('"','""')}"`;
+    return [header.join(','),...capitals.flatMap(capital=>capital.series.map(point=>[
+      capital.regionCode,capital.name,capital.region,capital.macrozone,point.year,point.type,point.value,point.classification,point.coveragePct,point.daysWithData,point.daysInPeriod,point.stationIdsUsed.join(';')
+    ].map(quote).join(',')))].join('\r\n');
+  }
+
+  function dataPage(params) {
+    if (!pm25Payload?.capitals?.length) return notFound('Datos todavía no disponibles');
+    const all=pm25Payload.capitals.slice().sort((a,b)=>a.order-b.order);
+    const requested=params.get('capital');
+    let selected=all.find(capital=>pm25Slug(capital.name)===requested)||all.find(capital=>capital.name==='Coyhaique')||all[0];
+    let macro='Todas',sort='annual-desc';
+    const macrozones=['Todas',...unique(all.map(capital=>capital.macrozone))];
+    view.innerHTML = `<section class="data-hero"><div class="shell data-hero-inner"><div><p class="eyebrow">Datos · Calidad del aire</p><h1>PM2.5 en capitales regionales de Chile</h1><p>Promedio anual de material particulado fino (PM2.5) en las 16 capitales regionales. La comparación principal comprende 2013–2025; 2026 se presenta por separado como avance provisional.</p></div><aside><p class="eyebrow">Una lectura documentada</p><h2>Aire más limpio,<br>comunidades más saludables</h2><p>Series con cobertura, calidad y selección de estaciones explícitas.</p></aside></div></section>
+      <nav class="data-product-tabs" aria-label="Visualizaciones de PM2.5"><div class="shell"><a href="#datos" aria-current="page">Serie anual</a><span aria-disabled="true">Ciclo estacional <small>Próximamente</small></span></div></nav>
+      <section class="pm25-controls"><div class="shell"><span>Filtrar por macrozona</span><div class="pm25-filter-chips">${macrozones.map(item=>`<button type="button" data-pm25-macro="${esc(item)}" aria-pressed="${item===macro}">${esc(item)}</button>`).join('')}</div><a href="#pm25-metodologia">¿Cómo leer estos datos? ↓</a></div></section>
+      <section class="shell pm25-dashboard" id="pm25-anual"><section class="pm25-ranking-panel"><div class="pm25-panel-head"><div><p class="eyebrow">Comparación nacional</p><h2>Capitales regionales <span>(16)</span></h2></div><label>Ordenar por<select id="pm25-sort"><option value="annual-desc">PM2.5 anual 2025</option><option value="ytd-desc">2026 YTD</option><option value="north">Norte a sur</option><option value="name">Nombre A–Z</option></select></label></div><div class="pm25-table-head"><span># · Ciudad</span><span>Tendencia<br>2013–2025</span><span>2025<br>µg/m³</span><span>2026 YTD<br>provisional</span></div><div id="pm25-city-list"></div><p class="pm25-table-note">Las discontinuidades indican períodos sin un promedio publicable. Un año insuficiente no se interpola.</p></section><section class="pm25-detail-panel" id="pm25-detail" aria-live="polite"></section></section>
+      <section class="shell pm25-comparison"><div class="pm25-section-head"><div><p class="eyebrow">Las capitales en una misma escala</p><h2>Trece años de series, una sola escala</h2><p>Cada línea corresponde a una capital. La ciudad seleccionada queda destacada; 2026 YTD no se incorpora a esta comparación.</p></div><button type="button" id="pm25-download-top">Descargar serie completa ↓</button></div><div id="pm25-comparison-chart"></div></section>
+      <section class="pm25-method" id="pm25-metodologia"><div class="shell"><article><span>▥</span><div><h3>Calidad de los datos</h3><p><i class="quality-validado"></i> Validado · <i class="quality-mixto"></i> Mixto · <i class="quality-preliminar"></i> Preliminar · <i class="quality-insuficiente"></i> Insuficiente</p><small>Los valores con cobertura insuficiente permanecen vacíos.</small></div></article><article><span>▤</span><div><h3>Metodología</h3><p>${esc(pm25Payload.method)}</p></div></article><article><span>⌖</span><div><h3>Estaciones y cobertura</h3><p id="pm25-station-summary"></p></div></article><article><span>↓</span><div><h3>Descargar datos</h3><button type="button" id="pm25-download-bottom">Serie anual en CSV</button><small>Fuente: ${esc(pm25Payload.source)}.</small></div></article></div></section>`;
+
+    const visibleCapitals=()=>all.filter(capital=>macro==='Todas'||capital.macrozone===macro).sort((a,b)=>{
+      if(sort==='north') return a.order-b.order;
+      if(sort==='name') return a.name.localeCompare(b.name,'es');
+      const year=sort==='ytd-desc'?2026:2025;
+      return (pm25Annual(b,year)?.value??-Infinity)-(pm25Annual(a,year)?.value??-Infinity)||a.order-b.order;
+    });
+    const syncUrl=()=>history.replaceState(null,'',route('datos',{capital:pm25Slug(selected.name)}));
+    const renderDetail=()=>{
+      const annual=pm25Annual(selected,2025),ytd=pm25Annual(selected,2026);
+      const usable=selected.series.filter(point=>point.type==='completo'&&point.year>=2013&&point.year<=2025&&Number.isFinite(point.value));
+      const first=usable[0];
+      const included=selected.stations.filter(station=>station.included);
+      const comparison=first&&Number.isFinite(annual?.value)?`Entre ${first.year} y 2025, el promedio anual pasó de ${pm25Number(first.value)} a ${pm25Number(annual.value)} µg/m³. Esta comparación describe la serie y no atribuye causas.`:'La serie no cuenta con dos extremos publicables para calcular una comparación.';
+      document.getElementById('pm25-detail').innerHTML=`<div class="pm25-detail-head"><div><p class="eyebrow">${esc(selected.region)} · ${esc(selected.macrozone)}</p><h2>${esc(selected.name)}</h2></div><span>${included.length} ${included.length===1?'estación incluida':'estaciones incluidas'}</span></div><div class="pm25-metrics"><article><strong>${pm25Number(annual?.value)} <small>${esc(pm25Payload.unit)}</small></strong><span>Promedio anual 2025</span><small>${pm25Quality[annual?.classification]||'Sin clasificación'} · ${pm25Number(annual?.coveragePct)}% cobertura</small></article><article class="is-ytd"><strong>${pm25Number(ytd?.value)} <small>${esc(pm25Payload.unit)}</small></strong><span>2026 a la fecha</span><small>YTD provisional · ${pm25Quality[ytd?.classification]||'Sin clasificación'} · ${pm25Number(ytd?.coveragePct)}% cobertura</small></article></div><h3 class="pm25-chart-title">Evolución anual de PM2.5 en ${esc(selected.name)}</h3>${pm25DetailChart(selected)}<p class="pm25-observation"><i aria-hidden="true">◆</i>${esc(comparison)} <strong>2026 permanece separado por ser un período parcial.</strong></p>`;
+      document.getElementById('pm25-station-summary').textContent=`${included.length} estaciones incluidas para ${selected.name}. ${ytd?.stationsWithData??0} aportan datos al avance 2026.`;
+      document.getElementById('pm25-comparison-chart').innerHTML=pm25ComparisonChart(visibleCapitals(),selected.name);
+      syncUrl();
+    };
+    const renderList=()=>{
+      const current=visibleCapitals();
+      if(!current.includes(selected)) selected=current[0]||all[0];
+      document.getElementById('pm25-city-list').innerHTML=current.map((capital,index)=>{
+        const annual=pm25Annual(capital,2025),ytd=pm25Annual(capital,2026);
+        return `<button type="button" class="pm25-city-row" data-pm25-city="${esc(pm25Slug(capital.name))}" aria-pressed="${capital===selected}"><span><small>${index+1}</small><strong>${esc(capital.name)}</strong></span>${pm25Sparkline(capital)}<b>${pm25Number(annual?.value)}</b><b class="pm25-ytd-value"><i class="quality-${esc(ytd?.classification||'insuficiente')}"></i>${pm25Number(ytd?.value)}</b></button>`;
+      }).join('');
+      document.querySelectorAll('[data-pm25-city]').forEach(button=>button.addEventListener('click',()=>{
+        selected=all.find(capital=>pm25Slug(capital.name)===button.dataset.pm25City)||selected;
+        document.querySelectorAll('[data-pm25-city]').forEach(item=>item.setAttribute('aria-pressed',String(item===button)));
+        renderDetail();
+      }));
+      renderDetail();
+    };
+    document.querySelectorAll('[data-pm25-macro]').forEach(button=>button.addEventListener('click',()=>{
+      macro=button.dataset.pm25Macro;
+      document.querySelectorAll('[data-pm25-macro]').forEach(item=>item.setAttribute('aria-pressed',String(item===button)));
+      renderList();
+    }));
+    document.getElementById('pm25-sort').addEventListener('change',event=>{sort=event.target.value;renderList();});
+    const download=()=>{
+      const blob=new Blob(['\uFEFF'+pm25Csv(all)],{type:'text/csv;charset=utf-8'});
+      const link=document.createElement('a');
+      link.href=URL.createObjectURL(blob);link.download='pm25_capital_annual_frontend.csv';link.click();
+      setTimeout(()=>URL.revokeObjectURL(link.href),0);
+    };
+    document.getElementById('pm25-download-top').addEventListener('click',download);
+    document.getElementById('pm25-download-bottom').addEventListener('click',download);
+    renderList();
   }
 
   function interiorHero({ variant, eyebrow, title, text, image, alt, tool = "" }) {
@@ -964,7 +1062,7 @@
     const raw = location.hash.slice(1) || "inicio";
     const [name, query = ""] = raw.split("?");
     const params = new URLSearchParams(query);
-    ({ inicio: home, catalogo: () => catalog(params), temas: topics, tema: () => topic(params), territorios: territories, territorio: () => territory(params), casos: casesLanding, caso: () => caseOverview(params), cronologia: () => caseChronology(params), recurso: () => resource(params), acerca: about }[name] || (() => notFound("Página no encontrada")))();
+    ({ inicio: home, catalogo: () => catalog(params), temas: topics, tema: () => topic(params), territorios: territories, territorio: () => territory(params), datos: () => dataPage(params), casos: casesLanding, caso: () => caseOverview(params), cronologia: () => caseChronology(params), recurso: () => resource(params), acerca: about }[name] || (() => notFound("Página no encontrada")))();
     document.title = name === "inicio" ? "Biblioteca Digital de Salud Ambiental de Chile" : `${view.querySelector("h1")?.textContent || "Biblioteca"} · Biblioteca de Salud Ambiental`;
     window.scrollTo({ top: 0, behavior: "instant" });
     const navRoute = ({tema:'temas',territorio:'territorios',caso:'casos',cronologia:'casos',recurso:'catalogo'}[name]||name);
