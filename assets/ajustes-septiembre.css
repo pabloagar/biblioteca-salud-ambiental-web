@@ -1,0 +1,33 @@
+.about-grid.project-credit{text-align:left;padding-bottom:0}.about-grid.project-credit p{font-weight:400}.case-feature{min-height:280px;justify-content:flex-end}.case-index-row{grid-template-columns:minmax(0,1fr) auto}.preview-case-card{justify-content:flex-end}@media(max-width:640px){.case-index-row{grid-template-columns:minmax(0,1fr)}.case-index-count{grid-column:1}}
+.pm25-detail-head-compact{align-items:center;gap:16px;padding-bottom:14px;border:0}
+.pm25-place{min-width:0}
+.pm25-place .eyebrow{margin-bottom:7px}
+.pm25-place>small{display:block;margin-top:5px;font-size:11px;color:var(--turquesa)}
+.pm25-head-value{display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex-shrink:0;text-align:right}
+.pm25-head-value strong{font:400 32px/1.15 var(--serif);white-space:nowrap}
+.pm25-head-value strong small{font:400 11px/1.2 'Segoe UI',sans-serif}
+.pm25-head-value>span{font-size:12px}.pm25-head-value>small{font-size:10px}
+.pm25-observation-compact{display:flex;flex-direction:column;gap:4px;margin:0;padding:9px 12px;font:400 12px/1.4 'Segoe UI',sans-serif}
+.pm25-observation-compact p{margin:0}.pm25-observation-compact p+p{font-weight:500}
+.pm25-detail-panel .pm25-chart-title{margin-top:16px}
+.pm25-seasonal-embedded .controls{border-top:0;padding-top:0}
+#pm25-seasonal-mount{min-height:75vh}
+.pm25-seasonal #periodComparison{margin-top:24px}
+.pm25-dashboard{padding-bottom:24px}
+@media(max-width:600px){.pm25-detail-head-compact{flex-wrap:wrap;gap:10px}.pm25-head-value{align-items:flex-start;text-align:left}.pm25-head-value strong{font-size:28px}.pm25-place h2{font-size:30px}.pm25-observation-compact{font-size:12px}}
+
+/* Comparación nacional y tabla mensual: revisión de legibilidad. */
+.pm25-annual-ranking .pm25-table-head,.pm25-annual-ranking .pm25-city-row{grid-template-columns:minmax(115px,1fr) 110px 100px}
+#pm25-order-explanation{margin:12px 0;line-height:1.5}
+.pm25-panel-head select{max-width:100%;min-width:205px}
+.pm25-seasonal .lower{grid-template-columns:minmax(0,1fr) minmax(0,1.1fr);grid-template-areas:"method table";gap:40px;align-items:start}
+.pm25-seasonal .lower>.method{grid-area:method;min-width:0}
+.pm25-seasonal .lower>div{grid-area:table;min-width:0}
+.pm25-seasonal .lower table{font-variant-numeric:tabular-nums;font-size:13px}
+.pm25-seasonal .lower td,.pm25-seasonal .lower th{padding:8px 6px}
+.pm25-seasonal .lower td:not(:first-child),.pm25-seasonal .lower th:not(:first-child){text-align:right}
+.pm25-seasonal .lower td{white-space:nowrap}
+.pm25-seasonal .lower th{vertical-align:bottom}
+@media(max-width:900px){.pm25-seasonal .lower{grid-template-columns:minmax(0,1fr);grid-template-areas:"method" "table";gap:24px}}
+@media(max-width:600px){.pm25-annual-ranking .pm25-table-head,.pm25-annual-ranking .pm25-city-row{grid-template-columns:minmax(95px,1fr) 70px 85px}}
+@media(max-width:600px){.pm25-annual-ranking .pm25-table-head,.pm25-annual-ranking .pm25-city-row{grid-template-columns:minmax(0,1fr) 100px}}

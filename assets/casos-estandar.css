@@ -1,0 +1,49 @@
+/* Ajustes exclusivos de los casos; conserva las variables y patrones existentes. */
+.case-standard-facts strong{font-size:26px;overflow-wrap:anywhere}
+.case-intro h2{font-size:30px;margin-bottom:18px}
+.case-evidence-group+.case-evidence-group{border-top:1px solid var(--line);margin-top:28px;padding-top:24px}
+.case-evidence-group h3{font-size:26px;margin-bottom:10px}
+.case-evidence-group p{color:var(--ink-2);font-size:15px;line-height:1.6}
+.case-standard-highlights{padding-block:48px;border-bottom:1px solid var(--line)}
+.case-standard-highlights h2{font-size:30px}
+.case-standard-highlights .case-key-events{margin-top:20px}
+.case-more{border-top:1px solid var(--line);margin-top:12px;padding-top:12px}
+.case-more summary{cursor:pointer;color:var(--turquesa);font-size:15px}
+.case-standard-pending{padding-block:64px;max-width:900px}
+.case-standard-pending h2{font-size:38px}
+.case-standard-pending .cases-primary{margin-top:24px}
+.case-standard-chronology .event-kind.territorio_actividad,.case-standard-chronology .event-kind.respuesta_publica{color:var(--petroleo)}
+.case-standard-chronology .event-kind.ambiente_exposicion{color:var(--turquesa)}
+.case-standard-chronology .event-kind.salud{color:var(--terracota)}
+.case-standard-chronology .event-kind.comunidad_justicia{color:var(--ink-2)}
+.case-reading-label{display:block;color:var(--ink);margin-bottom:5px}
+.case-standard-chronology .chapter-event-year time{font-size:23px;line-height:1.25;overflow-wrap:normal}
+.case-standard-chronology .chapter-events>article{grid-template-columns:130px minmax(0,1fr)}
+.case-standard-chronology .chapter-sources a{overflow-wrap:anywhere}
+.chronology-2a-head .case-tabs{position:static;padding:18px 0;margin-top:20px;flex-wrap:wrap;justify-content:flex-start}
+.case-evidence-group .chapter-sources a{overflow-wrap:anywhere}
+@media(max-width:700px){
+ .case-standard-facts strong{font-size:22px}
+ .case-standard-chronology .chapter-events>article{grid-template-columns:1fr;gap:12px}
+ .case-standard-chronology .chapter-event-year{display:flex;align-items:baseline;flex-wrap:wrap;gap:8px 16px}
+ .case-standard-chronology .event-kind{margin-top:0}
+ .case-standard-highlights .case-key-events>a{grid-template-columns:1fr;gap:8px}
+ .case-standard-pending h2{font-size:32px}
+}
+/* Evidencia sin columna lateral vacía; una fuente por tipo a primera vista. */
+.case-standard-evidence>.shell{display:block;padding-block:36px}
+.case-standard-evidence>.shell>div:first-child{max-width:840px;margin-bottom:26px}
+.case-standard-evidence h2{max-width:none}
+.case-evidence-columns{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:30px}
+.case-evidence-group,.case-evidence-group+.case-evidence-group{border-top:1px solid var(--line);margin:0;padding-top:18px;min-width:0}
+.case-evidence-group .chapter-sources a{display:block;padding-block:6px}
+.case-evidence-group .chapter-sources a>span{display:block;margin-bottom:4px;font-size:12px}
+.case-evidence-group .chapter-sources a>strong{display:block}
+.case-standard-highlights{padding-block:30px}
+.case-standard-highlights .case-key-events{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));column-gap:36px;row-gap:0;margin-top:16px}
+.case-standard-highlights .case-key-events>a{display:block;padding-block:13px}
+.case-standard-highlights .case-key-events time{display:block;font-size:18px;margin-bottom:6px}
+.case-standard-highlights .case-key-events small{font-size:14px}
+.case-standard-chronology .chapter-event-year time{font-size:20px}
+.hero .hero-location{position:absolute;right:24px;bottom:20px;margin:0;padding:6px 10px;background:rgba(255,255,255,.88);border-radius:2px;color:var(--petroleo);font-size:12px;line-height:1.4;z-index:2}
+@media(max-width:800px){.case-evidence-columns{grid-template-columns:1fr;gap:24px}.case-standard-highlights .case-key-events{grid-template-columns:1fr}.hero .hero-location{position:static;width:fit-content;margin:18px 0 0 auto;padding:5px 8px}}

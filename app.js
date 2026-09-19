@@ -6,6 +6,7 @@
   const territorialEntries = (payload.cases || []).flatMap(item => item.entries);
   const labels = payload.labels || { temas: {}, formatos: {}, tipos_recurso: {} };
   const view = document.getElementById("view");
+  let chapterObserver;
 
   const esc = value => String(value ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const norm = value => String(value ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
@@ -17,10 +18,11 @@
   const words = value => norm(value).split(/\s+/).filter(Boolean);
   const matchesText = (row, query) => {
     const evidence = territorialEntries.filter(e => e.resource_id === row.id).map(e => [e.titulo, e.hallazgos_clave, e.lugares_sectores, e.actores_clave, e.tags, e.cita_recomendada, e.identificador_externo].join(' '));
-    const haystack = norm([row.titulo, row.descripcion, row.utilidad, row.institucion, row.autor_ponente, ...(row.temas || []).map(t => label("temas", t)), ...territoryNames(row), ...evidence].join(" "));
+    const haystack = norm([row.busqueda, row.resumen, row.titulo, row.titulo_fuente, row.doi, ...(row.palabras_clave || []), row.descripcion, row.utilidad, row.institucion, row.autor_ponente, ...(row.temas || []).map(t => label("temas", t)), ...territoryNames(row), ...evidence].join(" "));
     return words(query).every(word => haystack.includes(word));
   };
   const typeLabel = row => {
+    if (row.tipo_documental) return row.tipo_documental;
     let types = (row.tipos_recurso || []).map(t => label("tipos_recurso", t));
     const territorialType = territorialEntries.find(e => e.resource_id === row.id)?.tipo_recurso;
     if (territorialType && types.every(t => norm(t) === 'otro')) return territorialType.charAt(0).toUpperCase() + territorialType.slice(1);
@@ -28,17 +30,17 @@
     else if (row.audiovisual && !types.some(t => /clase|grabación|seminario|webinar/i.test(t))) types.unshift("Video");
     return unique(types).join(" · ") || "Recurso";
   };
-  const groupOf = row => {
+  const groupOf = row => { if(row.grupo_catalogo) return row.grupo_catalogo;
     const original = norm(row.tipo_original || "");
     const types = new Set(row.tipos_recurso || []);
     if (types.has("clase") || types.has("grabacion") || row.audiovisual) return "audiovisuales";
     if (types.has("seminario") || types.has("webinar") || types.has("taller")) return "encuentros";
-    if (original.includes("tesis") || original.includes("articulo") || original.includes("revisión")) return "investigacion";
+    if (original.includes("tesis") || original.includes("articulo") || original.includes("revision")) return "investigacion";
     return "documentos";
   };
   const groupLabels = { audiovisuales: "Clases y videos", encuentros: "Seminarios y talleres", investigacion: "Investigación y tesis", documentos: "Documentos técnicos" };
   const byline = row => [row.autor_ponente, row.institucion, row.anio].filter(Boolean).join(" · ");
-  const statusLabel = row => row.estado_url === "redirige" ? "Enlace con redirección" : row.estado_url === "funciona" ? "Enlace comprobado" : "Enlace pendiente de comprobación";
+  const statusLabel = row => row.estado_url === "redirige" ? "Enlace con redirección" : row.estado_url === "funciona" ? "Respuesta accesible (no acredita contenido)" : "Comprobación automática no concluyente";
   const themeTag = code => `<a class="tag" href="${route("tema", { tema: code })}">${esc(label("temas", code))}</a>`;
   const themeCounts = () => Object.fromEntries(Object.keys(labels.temas || {}).map(code => [code, rows.filter(r => (r.temas || []).includes(code)).length]));
   const allTerritories = () => {
@@ -62,21 +64,8 @@
 
   // Curated links between the public catalogue and the six territorial cases.
   // Counts and publication years are always derived from the current public rows.
-  const caseDefinitions = [
-    { number:"01", slug:"polimetales-arica", name:"Polimetales en Arica", region:"Arica y Parinacota", regionId:"arica", marker:[121,10], resourceIds:[56,120,121,122,150], summary:"Recursos sobre exposición a arsénico, plomo y otros metales en Arica, incluidos trabajos sobre Cerro Chuño y salud infantil." },
-    { number:"02", slug:"tocopilla", name:"Tocopilla", region:"Antofagasta", regionId:"antofagasta", marker:[118,82], resourceIds:[153], summary:"Evidencia publicada en la Biblioteca sobre salud respiratoria en una comuna expuesta a centrales termoeléctricas a carbón." },
-    { number:"03", slug:"chanaral", name:"Chañaral", region:"Atacama", regionId:"atacama", marker:[107,120], resourceIds:[126,152], summary:"Estudios sobre relaves mineros, material particulado, función pulmonar e incertidumbre sanitaria en Chañaral." },
-    { number:"04", slug:"huasco", name:"Huasco", region:"Atacama", regionId:"atacama", marker:[105,152], resourceIds:[153], summary:"Material publicado sobre salud respiratoria y exposición asociada a centrales termoeléctricas a carbón en Huasco." },
-    { number:"05", slug:"quintero-puchuncavi-ventanas", name:"Quintero-Puchuncaví-Ventanas", region:"Valparaíso", regionId:"valparaiso", marker:[102,214], resourceIds:[4,44,127,128,129,155], summary:"Estudios, tesis y documentos sobre exposición, salud, regulación y justicia ambiental en Quintero, Puchuncaví y Ventanas." },
-    { number:"06", slug:"coronel", name:"Coronel", region:"Biobío", regionId:"biobio", marker:[78,291], resourceIds:[136], summary:"Recursos sobre la acción del Estado por la salud y la justicia ambiental en Coronel." },
-  ];
-  (payload.cases || []).forEach(imported => {
-    const current = caseDefinitions.find(item => item.slug === imported.slug);
-    if (current) {
-      const resourceIds = unique([...current.resourceIds, ...imported.resourceIds]);
-      Object.assign(current, imported, {resourceIds});
-    }
-  });
+  // Los casos y su interfaz dependen del mismo modelo editorial.
+  const caseDefinitions=window.BIBLIOTECA_CASOS.casos.map(c=>({slug:c.id,name:c.nombre,region:c.region,regionId:c.region_id,marker:c.marcador,number:c.numero,resourceIds:c.recursos,summary:c.bajada}));
   const caseBySlug = slug => caseDefinitions.find(item => item.slug === slug);
   const caseResources = item => (item?.resourceIds || []).map(id => rows.find(row => row.id === id)).filter(Boolean);
   const casesForRow = row => caseDefinitions.filter(item => item.resourceIds.includes(row.id));
@@ -119,7 +108,7 @@
         <h2><a href="${route('recurso',{id:row.id})}">${esc(row.titulo)}</a></h2>
         <p class="catalog-result-summary">${esc(row.descripcion || 'Ficha sin resumen editorial.')}</p>
         ${territorialCases.length?`<div class="catalog-case-links">${territorialCases.map(item=>`<a href="${route('caso',{caso:item.slug})}">Caso territorial · ${esc(item.name)}</a>`).join('')}</div>`:''}
-        <div class="catalog-result-bottom"><div class="tag-list">${(row.temas||[]).slice(0,4).map(themeTag).join('')}</div><a class="text-link" href="${route('recurso',{id:row.id})}">Ver ficha →</a></div>
+        <div class="catalog-result-bottom"><div class="tag-list">${(row.palabras_clave||[]).slice(0,3).map(k=>`<a class="tag" href="${route('catalogo',{vista:'catalogo',q:k})}">${esc(k)}</a>`).join('')}</div><a class="text-link" href="${route('recurso',{id:row.id})}">Ver ficha →</a></div>
       </div>
     </article>`;
   }
@@ -158,9 +147,9 @@
   function casesMap() {
     const counts = Object.fromEntries(regions.map(region => [region.id, caseDefinitions.filter(item => item.regionId === region.id).length]));
     const colors = ['#DCECE8','#A8D0C8','#6DAFA3'];
-    return `<svg class="cases-map" viewBox="0 0 220 640" role="group" aria-label="Mapa de Chile con seis casos territoriales documentados">
+    return `<svg class="cases-map" data-marker-placement="mercator" viewBox="0 0 220 640" role="group" aria-label="Mapa de Chile con siete casos territoriales">
       ${regions.map(region => `<path d="${region.path}" fill="${colors[Math.min(2,counts[region.id]||0)]}" stroke="#F7F4EF" stroke-width=".7" fill-rule="evenodd"><title>${esc(region.name)}: ${counts[region.id]||0} ${(counts[region.id]||0)===1?'caso':'casos'}</title></path>`).join('')}
-      ${caseDefinitions.map(item => `<a href="${route('caso',{caso:item.slug})}" class="case-marker" data-case="${item.slug}" aria-label="Abrir el caso ${esc(item.name)}"><circle cx="${item.marker[0]}" cy="${item.marker[1]}" r="4"/><title>${esc(item.name)}</title></a>`).join('')}
+      ${caseDefinitions.map(item => `<a href="${route('caso',{caso:item.slug})}" class="case-marker" data-case="${item.slug}" aria-label="Abrir el caso ${esc(item.name)}"><circle cx="${item.marker[0]}" cy="${item.marker[1]}" r="4"/><title>${esc(item.name)} · ubicación referencial</title></a>`).join('')}
     </svg>`;
   }
 
@@ -186,17 +175,113 @@
     return `<article class="editorial-card ${photographic ? 'with-photo' : 'without-photo'}">${cover}<div class="editorial-body"><p class="resource-kind">${esc(typeLabel(row))}${row.anio ? `<span> · ${esc(row.anio)}</span>` : ''}</p><h3><a href="${route('recurso',{id:row.id})}">${esc(row.titulo)}</a></h3><p class="meta">${esc(byline(row))}</p><p class="editorial-description">${esc(row.descripcion || '')}</p><a class="text-link" href="${route('recurso',{id:row.id})}">Ver ficha →</a></div></article>`;
   }
 
+  // Preview-only home sections. Counts and links come from the public catalogue.
+  const previewThemeGroups = [
+    {name:'Institucionalidad y normativa',description:'Normativa · Gobernanza · Evaluación ambiental',codes:['institucionalidad_ambiental','seia','regulacion','fiscalizacion','derecho_ambiental','politicas_ambientales']},
+    {name:'Contaminación y exposiciones',description:'Aire · Agua · Metales · Residuos',codes:['contaminacion','aire','agua','suelo','arsenico','plomo_metales','pesticidas','ruido','contaminantes_emergentes','residuos']},
+    {name:'Salud y enfermedad',description:'Salud infantil · Salud mental · Trabajo',codes:['salud_ocupacional','inocuidad_alimentaria','salud_reproductiva','salud_mental','vectores_infecciosas','impacto_sanitario','salud_infantil','salud_ambiental']},
+    {name:'Territorio y comunidad',description:'Justicia ambiental · Clima · Entornos',codes:['mineria','cambio_climatico','incendios','justicia_ambiental','salud_planetaria','hospitales_verdes','vivienda_ambiente_interior','ambiente_urbano']},
+    {name:'Metodología y evidencia',description:'Epidemiología · Biomonitoreo · Educación',codes:['epidemiologia_ambiental','exposoma_biomonitoreo','educacion_ambiental']},
+  ];
+  const previewThemeNames = labels.temas;
+  const previewThemeCopy = {
+    aire:'Calidad del aire, material particulado y salud.',
+    plomo_metales:'Exposición a metales y sus efectos en la salud.',
+    epidemiologia_ambiental:'Métodos para estudiar exposición y daño.',
+    justicia_ambiental:'Desigualdades en las cargas y la protección ambiental.',
+    impacto_sanitario:'Efectos del ambiente sobre la salud de la población.',
+    ambiente_urbano:'Ruido, calor y entorno construido.',
+  };
+  const previewKicker = (number,text) => `<p class="preview-kicker"><span>${number}</span><i aria-hidden="true"></i>${text}</p>`;
+
+  function previewNetwork(center, connections) {
+    const positions = [[220,51],[350,108],[350,240],[220,291],[90,240],[90,108]];
+    const caption = (name,x,y,central=false) => {
+      const lines=svgTextLines(name,central?19:12);
+      return `<text x="${x}" y="${y-5-(lines.length-1)*8}" text-anchor="middle">${lines.map((line,i)=>`<tspan x="${x}" dy="${i?16:0}"${!central&&line.length>12?' style="font-size:12.5px"':''}>${esc(line)}</tspan>`).join('')}</text>`;
+    };
+    return `<svg class="topics-network" viewBox="0 0 440 342" role="group" aria-label="Temas presentes en el caso Quintero-Puchuncaví">
+      ${connections.map((item,i)=>{const [x,y]=positions[i];return `<line x1="220" y1="170" x2="${x}" y2="${y}"/><circle class="topics-network-joint" cx="${(220+x)/2}" cy="${(170+y)/2}" r="3"/>`;}).join('')}
+      <a href="${route('caso',{caso:center.code})}" aria-label="Abrir el caso Quintero-Puchuncaví"><circle class="topics-network-center" cx="220" cy="170" r="60"/>${caption(center.name,220,170,true)}<text class="topics-network-count" x="220" y="200" text-anchor="middle">${center.count} recursos</text></a>
+      ${connections.map((item,i)=>{const [x,y]=positions[i];return `<a href="${route('catalogo',{caso:center.code,tema:item.code})}" aria-label="${esc(item.name)}: ${item.count} recursos del caso"><circle class="topics-network-node" cx="${x}" cy="${y}" r="49"/>${caption(item.name,x,y)}<text class="topics-network-count" x="${x}" y="${y+27}" text-anchor="middle">${item.count} recursos</text></a>`;}).join('')}
+    </svg>`;
+  }
+
+  function previewTerritories(items) {
+    return `<section class="home-section territory-section preview-territories" aria-labelledby="territory-heading">
+      <figure class="territory-scene"><img src="assets/territory-volcano-road.jpg" width="3000" height="4000" alt="Camino entre árboles que conduce hacia un volcán nevado" loading="lazy"></figure>
+      <div class="shell territory-composition">
+        <div class="territory-story"><div class="territory-story-intro"><p class="eyebrow">03 / Territorios de Chile</p><h2 id="territory-heading">El lugar también es parte de la historia.</h2><p>Explora estudios y experiencias desde los territorios donde se sitúan.</p><a class="text-link" href="#territorios">Explorar todos los territorios <span aria-hidden="true">→</span></a></div>
+          <div class="territory-scales"><p class="eyebrow">Un territorio, muchas escalas</p><h3><span>Región · Comuna</span> <span>Territorio ambiental · Cuenca</span></h3><p>Una misma publicación puede leerse desde diferentes geografías y escalas territoriales, conectando personas, lugares y saberes.</p><p class="territory-caption">Camino al volcán</p></div>
+        </div>
+        <div class="territory-atlas"><div class="territory-atlas-heading"><h3>Chile, de norte a sur</h3><span>Recursos por región</span></div>
+          <div class="territory-atlas-body"><div class="territory-atlas-map">${regionMap(items.map(r=>({...r,value:r.count||null})),'catalog')}</div>
+          <div class="territory-list" aria-label="Regiones de Chile, de norte a sur">${items.map(r=>r.count?`<a data-region="${r.id}" href="${route('territorio',{territorio:r.territory})}"><span>${esc(r.name)}</span><small aria-label="${r.count} ${r.count===1?'recurso':'recursos'}">${r.count}<span aria-hidden="true"> →</span></small></a>`:`<div class="no-resources" data-region="${r.id}"><span>${esc(r.name)}</span><small aria-label="Sin recursos">—</small></div>`).join('')}</div></div>
+          <div class="territory-atlas-foot"><div class="map-legend"><span class="legend-scale">${seq.map(c=>`<i style="background:${c}"></i>`).join('')}</span><span>1–${Math.max(...items.map(r=>r.count),0)} recursos</span><span class="no-data-key">Sin recursos</span></div>${mapCredit}</div>
+        </div>
+      </div>
+    </section>`;
+  }
+
+  function previewTopics() {
+    const {themes} = themeEditorialData();
+    const byCode = new Map(themes.map(theme => [theme.code,theme]));
+    const highlighted = ['aire','plomo_metales','epidemiologia_ambiental','justicia_ambiental','impacto_sanitario','ambiente_urbano'].map(code=>byCode.get(code)).filter(Boolean);
+    const centralCase = caseBySlug('quintero-puchuncavi-ventanas');
+    const connections = caseThemeCounts(centralCase).filter(([code])=>byCode.has(code)).slice(0,6).map(([code,count])=>({code,count,name:previewThemeNames[code]||label('temas',code)}));
+    const center = {code:centralCase.slug,name:'Quintero– Puchuncaví',count:caseResources(centralCase).length};
+    const graph = previewNetwork(center,connections);
+    return `<section class="home-section preview-topics" aria-labelledby="preview-topics-title"><div class="shell">
+      ${previewKicker('01','Explorar por tema')}
+      <div class="preview-section-head"><h2 id="preview-topics-title">Las preguntas se conectan.</h2><p>Un recurso puede pertenecer a varios temas. Explora los ${themes.length} temas de la Biblioteca en cinco categorías.</p></div>
+      <div class="preview-topic-grid"><div class="preview-network-card"><div class="preview-network-heading"><h3>Quintero–Puchuncaví</h3><span>Un caso, múltiples temas</span></div>${graph}<p class="preview-network-note">Cada conexión muestra recursos del caso vinculados a ese tema.</p></div>
+      <div class="preview-featured-topics"><p class="preview-list-label">Temas destacados</p>${highlighted.map(theme=>`<a href="${route('tema',{tema:theme.code})}"><span><strong>${esc(previewThemeNames[theme.code]||theme.name)}</strong><small>${esc(previewThemeCopy[theme.code]||'Recursos de la colección.')}</small></span><b>${theme.count}</b></a>`).join('')}<a class="preview-all-topics" href="#temas">Ver los ${themes.length} temas <span aria-hidden="true">→</span></a></div></div>
+      <div class="preview-topic-groups">${previewThemeGroups.map(group=>{const members=group.codes.map(code=>byCode.get(code)).filter(Boolean);return `<details class="preview-topic-group"><summary><strong>${group.name}</strong><span>${group.description}</span><small>${members.length} temas <i aria-hidden="true">+</i></small></summary><div>${members.map(theme=>`<a href="${route('tema',{tema:theme.code})}">${esc(theme.name)}<small>${theme.count}</small></a>`).join('')}</div></details>`;}).join('')}</div>
+    </div></section>`;
+  }
+
+  function previewCases() {
+    const featuredCases = [
+      {slug:'quintero-puchuncavi-ventanas',title:'Quintero–Puchuncaví',summary:'Historia industrial, contaminación, evidencia sanitaria, regulación y justicia ambiental en un territorio que reúne décadas de documentación.'},
+      {slug:'polimetales-arica',title:'Arica y los polimetales',summary:'Una historia de exposición a metales, salud infantil y respuestas sanitarias, ambientales y comunitarias desde la década de 1980.'},
+      {slug:'coronel',title:'Coronel',summary:'Recursos sobre la acción del Estado por la salud y la justicia ambiental en Coronel.'},
+    ];
+    return `<section class="home-section preview-cases" aria-labelledby="preview-cases-title"><div class="shell">${previewKicker('02','Casos emblemáticos')}<div class="preview-section-head"><h2 id="preview-cases-title">Lugares donde se acumula la evidencia.</h2><a class="text-link" href="#casos">Ver todos los casos <span aria-hidden="true">→</span></a></div><div class="preview-case-grid">${featuredCases.map((card,index)=>{const item=caseBySlug(card.slug),count=caseResources(item).length;return `<a class="preview-case-card preview-case-card-${index+1}" href="${route('caso',{caso:card.slug})}"><div><p class="preview-case-region">Región de ${esc(item.region)}</p><h3>${card.title}</h3><p class="preview-case-description">${card.summary}</p><strong class="preview-case-count">${count} ${count===1?'recurso vinculado':'recursos vinculados'} <span aria-hidden="true">→</span></strong></div></a>`;}).join('')}</div></div></section>`;
+  }
+
+  function previewEditorialCard(row, variant, kind, icon) {
+    if (!row) return '';
+    const lead=variant==='lead',compact=variant==='compact';
+    const citation = row.autor_ponente && row.autor_ponente!==row.institucion ? [row.autor_ponente,row.institucion].filter(Boolean).join(' · ') : row.institucion;
+    return `<article class="preview-editorial-card preview-editorial-${variant}">
+      <div class="preview-editorial-meta"><span class="preview-editorial-icon">${libraryIcon(icon)}</span><span>${kind}</span><time>${esc(row.anio||'')}</time></div>
+      <h3><a href="${route('recurso',{id:row.id})}">${esc(row.titulo)}</a></h3>
+      ${compact?'':`<p class="preview-editorial-description">${esc(row.descripcion)}</p>`}
+      <div class="preview-editorial-footer"><span>${esc(lead?row.institucion:citation)}</span><a href="${route('recurso',{id:row.id})}">Ver ficha <span aria-hidden="true">→</span></a></div>
+    </article>`;
+  }
+
+  function previewEditorial() {
+    return `<section class="home-section preview-editorial" aria-labelledby="preview-editorial-title"><div class="shell">${previewKicker('04','Selección editorial')}<div class="preview-section-head"><h2 id="preview-editorial-title">Un punto de partida.</h2><a class="text-link" href="#catalogo">Explorar la biblioteca <span aria-hidden="true">→</span></a></div><div class="preview-editorial-grid">
+      ${previewEditorialCard(rows.find(r=>r.id===155),'lead','Informe de investigación','documents')}
+      ${previewEditorialCard(rows.find(r=>r.id===10101),'secondary','Artículo científico','research')}
+      ${previewEditorialCard(rows.find(r=>r.id===351),'compact','Guía técnica','documents')}
+      ${previewEditorialCard(rows.find(r=>r.id===599),'compact','Artículo científico','research')}
+    </div></div></section>`;
+  }
+
   function home() {
     const counts = Object.fromEntries(Object.keys(groupLabels).map(group => [group, rows.filter(r => groupOf(r) === group).length]));
     const topics = Object.entries(themeCounts()).filter(([, count]) => count).sort((a, b) => b[1] - a[1]).slice(0, 9);
     const featured = rows.find(r => r.id === 29) || rows.find(r => r.prioridad_formato === 1) || rows[0];
     const companions = rows.filter(r => r.id !== featured?.id).sort((a, b) => (a.prioridad_formato || 6) - (b.prioridad_formato || 6) || (b.prioridad_total || 0) - (a.prioridad_total || 0)).slice(0, 2);
     const regionsWithCounts = regionalCatalog();
-    view.innerHTML = `<section class="hero"><figure class="hero-media"><img src="assets/design-p1.webp" alt="Arco rocoso de La Portada en la costa de Antofagasta" width="1400" height="1051" fetchpriority="high"><figcaption class="photo-credit">La Portada, Antofagasta</figcaption></figure><div class="shell hero-inner"><div class="hero-copy"><p class="eyebrow">Conocimiento abierto · Perspectiva chilena</p><h1>Ambiente y salud<br><em>Un conocimiento compartido</em></h1><p class="hero-lede">Clases, seminarios, estudios y documentos seleccionados para aprender, enseñar e investigar desde Chile</p></div><form id="home-search" role="search"><label class="search-label" for="home-query">¿Qué quieres explorar?</label><div class="search-combo"><input id="home-query" type="search" placeholder="Busca un tema, autor, institución o territorio"><button class="primary-button" type="submit">Buscar en la biblioteca <span aria-hidden="true">→</span></button></div></form></div></section>
-    <div class="type-band"><div class="shell type-links">${Object.entries(groupLabels).map(([group, text]) => `<a href="${route('catalogo',{grupo:group})}"><span>${esc(text)}</span><strong>${counts[group]}</strong></a>`).join('')}</div></div>
-    <section class="home-section home-topics"><div class="shell topics-layout"><div><p class="eyebrow">01 / Explorar por tema</p><h2>Las preguntas se conectan.</h2><p class="section-lede">Un recurso puede pertenecer a varios temas. Estos son los tres con más material en la Biblioteca.</p><div class="top-topics">${topics.slice(0,3).map(([code,count]) => `<a href="${route('tema',{tema:code})}"><span>${esc(label('temas',code))}</span><small>${count} recursos</small></a>`).join('')}</div></div><div class="other-topics"><p class="index-heading">Los demás temas</p>${topics.slice(3).map(([code,count]) => `<a href="${route('tema',{tema:code})}"><span>${esc(label('temas',code))}</span><small>${count}</small></a>`).join('')}<a class="text-link" href="#temas">Ver todos los temas →</a></div></div></section>
-    <section class="home-section territory-section"><div class="shell territory-layout"><div class="territory-intro"><p class="eyebrow">02 / Territorios de Chile</p><h2>El lugar también es parte de la historia.</h2><p class="section-lede">Explora estudios y experiencias desde los territorios donde se sitúan.</p></div><figure class="territory-photo"><img src="assets/design-p2.webp" width="1400" height="1867" alt="Bosque de araucarias en el camino a Icalma" loading="lazy"><figcaption class="photo-credit">Camino a Icalma · Bosque de araucarias</figcaption></figure><div class="territory-map-wrap">${regionMap(regionsWithCounts.map(r => ({...r,value:r.count || null})), 'catalog')}<div class="map-legend"><span class="legend-scale">${seq.map(c=>`<i style="background:${c}"></i>`).join('')}</span><span>1 → ${Math.max(...regionsWithCounts.map(r=>r.count),0)} recursos</span><span class="no-data-key">Sin recursos</span></div>${mapCredit}</div><div class="territory-list" aria-label="Regiones de Chile">${regionsWithCounts.map(r => r.count ? `<a data-region="${r.id}" href="${route('territorio',{territorio:r.territory})}"><span>${esc(r.name)}</span><small>${r.count}<span class="desktop-count"> ${r.count === 1 ? 'recurso' : 'recursos'} →</span></small></a>` : `<div class="no-resources" data-region="${r.id}"><span>${esc(r.name)}</span><small><span class="desktop-count">Sin recursos</span><span class="mobile-count" aria-label="Sin recursos">—</span></small></div>`).join('')}</div><a class="text-link territory-more" href="#territorios">Explorar todos los territorios →</a></div></section>
-    <section class="home-section editorial-section"><div class="shell"><div class="section-heading"><div><p class="eyebrow">03 / Selección editorial</p><h2>Un punto de partida.</h2></div><a class="text-link" href="#catalogo">Explorar la biblioteca →</a></div><div class="editorial-grid">${featured ? editorialCard(featured, true) : ''}${companions.map(r=>editorialCard(r)).join('')}</div></div></section>
+    view.innerHTML = `<section class="hero"><figure class="hero-media"><img src="assets/design-p1.webp" alt="Arco rocoso de La Portada en la costa de Antofagasta" width="1400" height="1051" fetchpriority="high"></figure><div class="shell hero-inner"><div class="hero-copy"><p class="eyebrow">Conocimiento abierto · Perspectiva chilena</p><h1>Ambiente y salud<br><em>Un conocimiento compartido</em></h1><p class="hero-lede">Clases, seminarios, estudios y documentos seleccionados para aprender, enseñar e investigar desde Chile</p></div><form id="home-search" role="search"><label class="search-label" for="home-query">¿Qué quieres explorar?</label><div class="search-combo"><input id="home-query" type="search" placeholder="Busca un tema, autor, institución o territorio"><button class="primary-button" type="submit">Buscar en la biblioteca <span aria-hidden="true">→</span></button></div></form><div class="hero-foot"><div class="type-band"><div class="type-links">${Object.entries(groupLabels).map(([group, text]) => `<a href="${route('catalogo',{grupo:group})}"><span>${esc(text)}</span><strong>${counts[group]}</strong></a>`).join('')}</div></div><p class="hero-location"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 10c0 5-7 11-7 11S5 15 5 10a7 7 0 1 1 14 0Z"/><circle cx="12" cy="10" r="2.5"/></svg>La Portada · Antofagasta</p></div></div></section>
+
+    ${previewTopics()}
+    ${previewCases()}
+    ${previewTerritories(regionsWithCounts)}
+    ${previewEditorial()}
     `;
     document.getElementById('home-search').addEventListener('submit', event => {
       event.preventDefault();
@@ -233,10 +318,14 @@
     });
   }
 
+  const pm25Guideline = 5;
+  const pm25GuidelineNote = '<p class="pm25-reference-note"><i aria-hidden="true"></i><span>Referencia <a href="https://www.who.int/publications/i/item/9789240034228/" target="_blank" rel="noopener noreferrer">OMS 2021</a>: <strong>5 µg/m³ · media anual</strong>. La comparación enero–agosto se presenta aparte y no usa un umbral anual.</span></p>';
+  const pm25GuideLine = (x1,x2,y,withLabel=true) => `<g class="pm25-guideline" data-value="5"><line x1="${x1}" x2="${x2}" y1="${y}" y2="${y}"><title>Guía OMS 2021: 5 µg/m³ de PM2.5, media anual</title></line>${withLabel?`<text x="${x1+8}" y="${y-7}">OMS · 5 µg/m³ anual</text>`:''}</g>`;
   const pm25Payload = window.BIBLIOTECA_PM25 || null;
   const pm25Number = value => Number.isFinite(value) ? value.toLocaleString('es-CL', {minimumFractionDigits:1,maximumFractionDigits:1}) : 's/d';
   const pm25Slug = value => norm(value).replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
   const pm25Annual = (capital, year) => capital.series.find(point => point.year === year);
+  const pm25Period = (capital,year) => window.BIBLIOTECA_PM25_PERIODS?.periods[capital.name]?.find(p=>p.year===year);
   const pm25Quality = {validado:'Validado',mixto:'Mixto',preliminar:'Preliminar',insuficiente:'Insuficiente'};
 
   function pm25Segments(capital, years, width, height, maxValue, padding = 3) {
@@ -255,23 +344,23 @@
 
   function pm25Sparkline(capital) {
     const years = Array.from({length:13},(_,index)=>2013+index);
-    const maxValue = Math.max(...capital.series.filter(point=>years.includes(point.year)&&Number.isFinite(point.value)).map(point=>point.value),1);
+    const maxValue = Math.max(...capital.series.filter(point=>years.includes(point.year)&&Number.isFinite(point.value)).map(point=>point.value),pm25Guideline*1.25);
     const lines = pm25Segments(capital,years,112,30,maxValue).map(points=>`<polyline points="${points.map(point=>point.join(',')).join(' ')}"/>`).join('');
-    return `<svg class="pm25-sparkline" viewBox="0 0 112 30" role="img" aria-label="Tendencia anual 2013 a 2025 de ${esc(capital.name)}">${lines}</svg>`;
+    return `<svg class="pm25-sparkline" viewBox="0 0 112 30" role="img" aria-label="Tendencia anual 2013 a 2025 de ${esc(capital.name)}; guía OMS anual de 5 µg/m³">${lines}${pm25GuideLine(3,109,27-(pm25Guideline/maxValue)*24,false)}</svg>`;
   }
 
   function pm25DetailChart(capital) {
-    const years = Array.from({length:14},(_,index)=>2013+index);
+    const years = Array.from({length:13},(_,index)=>2013+index);
     const width=760,height=260,left=46,right=22,top=20,bottom=38;
-    const observed=capital.series.filter(point=>point.year>=2013&&point.year<=2026&&Number.isFinite(point.value)).map(point=>point.value);
+    const observed=capital.series.filter(point=>point.year>=2013&&point.year<=2025&&Number.isFinite(point.value)).map(point=>point.value);
     const maxValue=Math.max(40,Math.ceil(Math.max(...observed,1)/10)*10);
     const gridStep=maxValue<=40?10:20;
     const gridValues=Array.from({length:Math.floor(maxValue/gridStep)+1},(_,index)=>index*gridStep);
     if(gridValues.at(-1)!==maxValue) gridValues.push(maxValue);
     const chartWidth=width-left-right,chartHeight=height-top-bottom;
-    const x = year => left+(year-2013)*(chartWidth/13);
+    const x = year => left+(year-2013)*(chartWidth/12);
     const y = value => top+chartHeight-(value/maxValue)*chartHeight;
-    const completeYears=years.slice(0,-1);
+    const completeYears=years;
     const completeSegments=[];
     let completeCurrent=[];
     completeYears.forEach(year=>{
@@ -282,16 +371,11 @@
     if(completeCurrent.length) completeSegments.push(completeCurrent);
     const completeLines=completeSegments.map(points=>`<polyline class="pm25-chart-line" points="${points.map(point=>point.join(',')).join(' ')}"/>`).join('');
     const points=completeYears.map(year=>pm25Annual(capital,year)).filter(point=>Number.isFinite(point?.value));
-    const last=pm25Annual(capital,2025),ytd=pm25Annual(capital,2026);
-    const ytdConnector=Number.isFinite(last?.value)&&Number.isFinite(ytd?.value)?`<line class="pm25-ytd-connector" x1="${x(2025)}" y1="${y(last.value)}" x2="${x(2026)}" y2="${y(ytd.value)}"/>`:'';
     const dots=points.map(point=>`<circle cx="${x(point.year)}" cy="${y(point.value)}" r="3"><title>${point.year}: ${pm25Number(point.value)} µg/m³</title></circle>`).join('');
-    const ytdDot=Number.isFinite(ytd?.value)?`<circle class="pm25-ytd-dot" cx="${x(2026)}" cy="${y(ytd.value)}" r="5"><title>2026 YTD provisional: ${pm25Number(ytd.value)} µg/m³</title></circle>`:'';
-    return `<svg class="pm25-detail-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="Serie anual de PM2.5 en ${esc(capital.name)}; 2013 a 2025 son años completos y 2026 es YTD provisional">
-      <rect class="pm25-ytd-band" x="${x(2026)-chartWidth/26}" y="0" width="${chartWidth/13+right}" height="${height}"/>
+    return `<svg class="pm25-detail-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="Serie anual de PM2.5 en ${esc(capital.name)}; años completos de 2013 a 2025">
       ${gridValues.map(value=>`<g class="pm25-grid"><line x1="${left}" y1="${y(value)}" x2="${width-right}" y2="${y(value)}"/><text x="${left-9}" y="${y(value)+4}">${value}</text></g>`).join('')}
-      ${completeLines}${ytdConnector}<g class="pm25-chart-points">${dots}${ytdDot}</g>
+      ${completeLines}<g class="pm25-chart-points">${dots}</g>${pm25GuideLine(left,x(2025),y(pm25Guideline))}
       ${[2013,2017,2021,2025].map(year=>`<text class="pm25-year-label" x="${x(year)}" y="${height-10}">${year}</text>`).join('')}
-      <text class="pm25-year-label pm25-ytd-label" x="${x(2026)}" y="${height-10}">2026 YTD</text>
       <text class="pm25-axis-title" transform="translate(13 ${height/2}) rotate(-90)">PM2.5 (µg/m³)</text>
     </svg>`;
   }
@@ -310,7 +394,7 @@
     }).join('');
     return `<svg class="pm25-comparison-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="Comparación de promedios anuales de PM2.5 entre capitales regionales, 2013 a 2025">
       ${gridValues.map(value=>`<g class="pm25-grid"><line x1="${left}" y1="${top+chartHeight-(value/maxValue)*chartHeight}" x2="${width-right}" y2="${top+chartHeight-(value/maxValue)*chartHeight}"/><text x="${left-10}" y="${top+chartHeight-(value/maxValue)*chartHeight+4}">${value}</text></g>`).join('')}
-      <g class="pm25-comparison-lines">${paths}</g>
+      <g class="pm25-comparison-lines">${paths}</g>${pm25GuideLine(left,width-right,top+chartHeight-(pm25Guideline/maxValue)*chartHeight)}
       ${[2013,2015,2017,2019,2021,2023,2025].map(year=>`<text class="pm25-year-label" x="${left+(year-2013)*(chartWidth/12)}" y="${height-12}">${year}</text>`).join('')}
       <text class="pm25-axis-title" transform="translate(13 ${height/2}) rotate(-90)">PM2.5 (µg/m³)</text>
     </svg>`;
@@ -319,49 +403,79 @@
   function pm25Csv(capitals) {
     const header=['region_code','capital','region','macrozona','year','year_type','annual_mean_ugm3','classification','coverage_pct','n_days_with_data','days_in_period','station_ids_used'];
     const quote=value=>`"${String(value??'').replaceAll('"','""')}"`;
-    return [header.join(','),...capitals.flatMap(capital=>capital.series.map(point=>[
+    return [header.join(','),...capitals.flatMap(capital=>capital.series.filter(point=>point.type==='completo').map(point=>[
       capital.regionCode,capital.name,capital.region,capital.macrozone,point.year,point.type,point.value,point.classification,point.coveragePct,point.daysWithData,point.daysInPeriod,point.stationIdsUsed.join(';')
     ].map(quote).join(',')))].join('\r\n');
   }
 
+  const pm25CommonHero = "<section class=\"data-hero\"><div class=\"shell data-hero-inner\"><div><p class=\"eyebrow\">Datos · Calidad del aire</p><h1>PM2.5 en capitales regionales de Chile</h1><p>Series anuales y ciclo mensual de material particulado fino (PM2.5) en las 16 capitales regionales. Explora 2013–2025 y compara enero–agosto de 2026 con el mismo período de 2025.</p></div><aside><p class=\"eyebrow\">Aire y salud</p><h2>¿Qué es el PM2.5?</h2><p>Son partículas diminutas suspendidas en el aire, de hasta 2,5 micrómetros de diámetro. Al respirarlas pueden llegar a zonas profundas de los pulmones y algunas pasar a la sangre. La exposición aumenta el riesgo de enfermedades respiratorias y cardiovasculares. <a href=\"https://www.who.int/es/news-room/questions-and-answers/item/who-global-air-quality-guidelines\" target=\"_blank\" rel=\"noopener noreferrer\">Más información en la OMS ↗</a></p></aside></div></section>";
+  let seasonalLoad;
+  function seasonalPage(params) {
+    const capital=pm25Payload.capitals.find(c=>pm25Slug(c.name)===params.get('capital'))?.name||'Coyhaique';
+    view.innerHTML=`${pm25CommonHero}<nav class="data-product-tabs" aria-label="Visualizaciones de PM2.5"><div class="shell"><a href="${route('datos',{capital:pm25Slug(capital)})}">Serie anual</a><a href="${route('datos',{vista:'estacional',capital:pm25Slug(capital)})}" aria-current="page">Ciclo estacional</a></div></nav><div id="pm25-seasonal-mount"><div class="shell"><h1>Ciclo estacional del PM2.5</h1><p role="status">Cargando las series mensuales…</p></div></div>`;
+    const root=document.getElementById('pm25-seasonal-mount');
+    const mount=()=>{if(root.isConnected){window.BibliotecaSeasonal.mount(root,{capital,embedded:true});root.querySelector('#capital').addEventListener('change',event=>{const name=pm25Payload.capitals[Number(event.target.value)].name;history.replaceState(null,'',route('datos',{vista:'estacional',capital:pm25Slug(name)}));view.querySelector('.data-product-tabs a').href=route('datos',{capital:pm25Slug(name)});});document.title='Ciclo estacional del PM2.5 · Biblioteca de Salud Ambiental';}};
+    if(window.BibliotecaSeasonal){mount();return;}
+    if(!seasonalLoad) seasonalLoad=new Promise((resolve,reject)=>{const script=document.createElement('script');script.src='assets/pm25-seasonal.js';script.onload=resolve;script.onerror=()=>{script.remove();seasonalLoad=null;reject(new Error('No se pudo cargar'));};document.head.append(script);});
+    seasonalLoad.then(mount).catch(()=>{if(root.isConnected)root.innerHTML='<div class="shell"><h1>Ciclo estacional</h1><p>No se pudieron cargar los datos. Recarga la página para intentarlo nuevamente.</p></div>';});
+  }
+
   function dataPage(params) {
+    if(params.get('vista')==='estacional'&&pm25Payload?.capitals?.length) return seasonalPage(params);
     if (!pm25Payload?.capitals?.length) return notFound('Datos todavía no disponibles');
     const all=pm25Payload.capitals.slice().sort((a,b)=>a.order-b.order);
     const requested=params.get('capital');
     let selected=all.find(capital=>pm25Slug(capital.name)===requested)||all.find(capital=>capital.name==='Coyhaique')||all[0];
-    let macro='Todas',sort='annual-desc';
     const macrozones=['Todas',...unique(all.map(capital=>capital.macrozone))];
-    view.innerHTML = `<section class="data-hero"><div class="shell data-hero-inner"><div><p class="eyebrow">Datos · Calidad del aire</p><h1>PM2.5 en capitales regionales de Chile</h1><p>Promedio anual de material particulado fino (PM2.5) en las 16 capitales regionales. La comparación principal comprende 2013–2025; 2026 se presenta por separado como avance provisional.</p></div><aside><p class="eyebrow">Una lectura documentada</p><h2>Aire más limpio,<br>comunidades más saludables</h2><p>Series con cobertura, calidad y selección de estaciones explícitas.</p></aside></div></section>
-      <nav class="data-product-tabs" aria-label="Visualizaciones de PM2.5"><div class="shell"><a href="#datos" aria-current="page">Serie anual</a><span aria-disabled="true">Ciclo estacional <small>Próximamente</small></span></div></nav>
+    let macro=macrozones.includes(params.get('macrozona'))?params.get('macrozona'):'Todas';
+    let sort=['full-year-desc','annual-desc','ytd-desc','north','name'].includes(params.get('orden'))?params.get('orden'):'full-year-desc';
+    let annualView=sort==='full-year-desc'||(['north','name'].includes(sort)&&params.get('medida')!=='periodo');
+    view.innerHTML = `${pm25CommonHero}
+      <nav class="data-product-tabs" aria-label="Visualizaciones de PM2.5"><div class="shell"><a href="#datos" aria-current="page">Serie anual</a><a id="pm25-seasonal-link" href="#datos?vista=estacional">Ciclo estacional</a></div></nav>
       <section class="pm25-controls"><div class="shell"><span>Filtrar por macrozona</span><div class="pm25-filter-chips">${macrozones.map(item=>`<button type="button" data-pm25-macro="${esc(item)}" aria-pressed="${item===macro}">${esc(item)}</button>`).join('')}</div><a href="#pm25-metodologia">¿Cómo leer estos datos? ↓</a></div></section>
-      <section class="shell pm25-dashboard" id="pm25-anual"><section class="pm25-ranking-panel"><div class="pm25-panel-head"><div><p class="eyebrow">Comparación nacional</p><h2>Capitales regionales <span>(16)</span></h2></div><label>Ordenar por<select id="pm25-sort"><option value="annual-desc">PM2.5 anual 2025</option><option value="ytd-desc">2026 YTD</option><option value="north">Norte a sur</option><option value="name">Nombre A–Z</option></select></label></div><div class="pm25-table-head"><span># · Ciudad</span><span>Tendencia<br>2013–2025</span><span>2025<br>µg/m³</span><span>2026 YTD<br>provisional</span></div><div id="pm25-city-list"></div><p class="pm25-table-note">Las discontinuidades indican períodos sin un promedio publicable. Un año insuficiente no se interpola.</p></section><section class="pm25-detail-panel" id="pm25-detail" aria-live="polite"></section></section>
-      <section class="shell pm25-comparison"><div class="pm25-section-head"><div><p class="eyebrow">Las capitales en una misma escala</p><h2>Trece años de series, una sola escala</h2><p>Cada línea corresponde a una capital. La ciudad seleccionada queda destacada; 2026 YTD no se incorpora a esta comparación.</p></div><button type="button" id="pm25-download-top">Descargar serie completa ↓</button></div><div id="pm25-comparison-chart"></div></section>
+      
+      <section class="shell pm25-dashboard" id="pm25-anual"><section class="pm25-ranking-panel"><div class="pm25-panel-head"><div><p class="eyebrow">Comparación nacional</p><h2>Capitales regionales <span>(16)</span></h2></div><label>Comparación y orden<select id="pm25-sort"><option value="full-year-desc">Anual 2025 · mayor a menor</option><option value="annual-desc">Ene–ago 2025 · mayor a menor</option><option value="ytd-desc">Ene–ago 2026 · mayor a menor</option><option value="north">Norte a sur</option><option value="name">Nombre A–Z</option></select></label></div><p id="pm25-order-explanation" class="pm25-table-note" aria-live="polite"></p><div class="pm25-table-head"><span># · Ciudad</span><span>Tendencia<br>2013–2025</span><span>Ene–ago 2025<br>µg/m³</span><span>Ene–ago 2026<br>µg/m³</span></div><div id="pm25-city-list"></div><p class="pm25-table-note"><span class="pm25-mini-reference"><i aria-hidden="true"></i>Guía OMS: 5 µg/m³, media anual.</span>Las discontinuidades indican períodos sin un promedio publicable. Un año insuficiente no se interpola.</p></section><section class="pm25-detail-panel" id="pm25-detail" aria-live="polite"></section></section>
+      <section class="shell pm25-seasonal" style="margin-top:24px;margin-bottom:24px"><div class="sheet" id="pm25-period-summary"></div></section>
+      <section class="shell pm25-comparison"><div class="pm25-section-head"><div><p class="eyebrow">Las capitales en una misma escala</p><h2>Trece años de series, una sola escala</h2><p>Cada línea corresponde a una capital. La ciudad seleccionada queda destacada; 2026 parcial no se incorpora a esta comparación.</p></div><button type="button" id="pm25-download-top">Descargar serie completa ↓</button></div><div id="pm25-comparison-chart"></div>${pm25GuidelineNote}</section>
       <section class="pm25-method" id="pm25-metodologia"><div class="shell"><article><span>▥</span><div><h3>Calidad de los datos</h3><p><i class="quality-validado"></i> Validado · <i class="quality-mixto"></i> Mixto · <i class="quality-preliminar"></i> Preliminar · <i class="quality-insuficiente"></i> Insuficiente</p><small>Los valores con cobertura insuficiente permanecen vacíos.</small></div></article><article><span>▤</span><div><h3>Metodología</h3><p>${esc(pm25Payload.method)}</p></div></article><article><span>⌖</span><div><h3>Estaciones y cobertura</h3><p id="pm25-station-summary"></p></div></article><article><span>↓</span><div><h3>Descargar datos</h3><button type="button" id="pm25-download-bottom">Serie anual en CSV</button><small>Fuente: ${esc(pm25Payload.source)}.</small></div></article></div></section>`;
 
     const visibleCapitals=()=>all.filter(capital=>macro==='Todas'||capital.macrozone===macro).sort((a,b)=>{
       if(sort==='north') return a.order-b.order;
       if(sort==='name') return a.name.localeCompare(b.name,'es');
       const year=sort==='ytd-desc'?2026:2025;
-      return (pm25Annual(b,year)?.value??-Infinity)-(pm25Annual(a,year)?.value??-Infinity)||a.order-b.order;
+      const value=capital=>annualView?pm25Annual(capital,2025)?.value:pm25Period(capital,year)?.value;
+      return (value(b)??-Infinity)-(value(a)??-Infinity)||a.order-b.order;
     });
-    const syncUrl=()=>history.replaceState(null,'',route('datos',{capital:pm25Slug(selected.name)}));
+    document.getElementById('pm25-sort').value=sort;
+    const syncUrl=()=>history.replaceState(null,'',route('datos',{
+      capital:pm25Slug(selected.name),
+      ...(macro!=='Todas'?{macrozona:macro}:{}),
+      ...(sort!=='full-year-desc'?{orden:sort}:{}),
+      ...(!annualView?{medida:'periodo'}:{})
+    }));
     const renderDetail=()=>{
-      const annual=pm25Annual(selected,2025),ytd=pm25Annual(selected,2026);
+      const annual=pm25Annual(selected,2025),ytd=pm25Period(selected,2026);
       const usable=selected.series.filter(point=>point.type==='completo'&&point.year>=2013&&point.year<=2025&&Number.isFinite(point.value));
       const first=usable[0];
       const included=selected.stations.filter(station=>station.included);
       const comparison=first&&Number.isFinite(annual?.value)?`Entre ${first.year} y 2025, el promedio anual pasó de ${pm25Number(first.value)} a ${pm25Number(annual.value)} µg/m³. Esta comparación describe la serie y no atribuye causas.`:'La serie no cuenta con dos extremos publicables para calcular una comparación.';
-      document.getElementById('pm25-detail').innerHTML=`<div class="pm25-detail-head"><div><p class="eyebrow">${esc(selected.region)} · ${esc(selected.macrozone)}</p><h2>${esc(selected.name)}</h2></div><span>${included.length} ${included.length===1?'estación incluida':'estaciones incluidas'}</span></div><div class="pm25-metrics"><article><strong>${pm25Number(annual?.value)} <small>${esc(pm25Payload.unit)}</small></strong><span>Promedio anual 2025</span><small>${pm25Quality[annual?.classification]||'Sin clasificación'} · ${pm25Number(annual?.coveragePct)}% cobertura</small></article><article class="is-ytd"><strong>${pm25Number(ytd?.value)} <small>${esc(pm25Payload.unit)}</small></strong><span>2026 a la fecha</span><small>YTD provisional · ${pm25Quality[ytd?.classification]||'Sin clasificación'} · ${pm25Number(ytd?.coveragePct)}% cobertura</small></article></div><h3 class="pm25-chart-title">Evolución anual de PM2.5 en ${esc(selected.name)}</h3>${pm25DetailChart(selected)}<p class="pm25-observation"><i aria-hidden="true">◆</i>${esc(comparison)} <strong>2026 permanece separado por ser un período parcial.</strong></p>`;
-      document.getElementById('pm25-station-summary').textContent=`${included.length} estaciones incluidas para ${selected.name}. ${ytd?.stationsWithData??0} aportan datos al avance 2026.`;
+      document.getElementById('pm25-detail').innerHTML=`<div class="pm25-detail-head pm25-detail-head-compact"><div class="pm25-place"><p class="eyebrow">${esc(selected.region)} · ${esc(selected.macrozone)}</p><h2>${esc(selected.name)}</h2><small>${included.length} ${included.length===1?'estación incluida':'estaciones incluidas'}</small></div><div class="pm25-head-value"><strong>${pm25Number(annual?.value)} <small>${esc(pm25Payload.unit)}</small></strong><span>Promedio anual 2025</span><small>${pm25Quality[annual?.classification]||'Sin clasificación'} · ${pm25Number(annual?.coveragePct)}% cobertura</small></div></div><div class="pm25-observation pm25-observation-compact"><p>${esc(comparison)}</p><p>El cambio de 2026 compara enero–agosto de ambos años; se muestra debajo del gráfico.</p></div><h3 class="pm25-chart-title">Evolución anual de PM2.5 en ${esc(selected.name)}</h3>${pm25DetailChart(selected)}${pm25GuidelineNote}`;
+      document.getElementById('pm25-station-summary').textContent=`${included.length} estaciones incluidas para ${selected.name}. ${ytd?.stationsWithData??0} aportan datos a enero–agosto de 2026.`;
       document.getElementById('pm25-comparison-chart').innerHTML=pm25ComparisonChart(visibleCapitals(),selected.name);
+      window.BibliotecaPeriodPanel(selected.name,document.getElementById('pm25-period-summary'));
+      document.getElementById('pm25-seasonal-link').href=route('datos',{vista:'estacional',capital:pm25Slug(selected.name)});
       syncUrl();
     };
     const renderList=()=>{
       const current=visibleCapitals();
+      view.querySelector('.pm25-ranking-panel').classList.toggle('pm25-annual-ranking',annualView);
+      view.querySelector('.pm25-table-head').innerHTML=annualView?'<span># · Ciudad</span><span>Tendencia<br>2013–2025</span><span>Promedio anual 2025<br>µg/m³</span>':'<span># · Ciudad</span><span>Tendencia<br>2013–2025</span><span>Ene–ago 2025<br>µg/m³</span><span>Ene–ago 2026<br>µg/m³</span>';
+      document.getElementById('pm25-order-explanation').textContent=(annualView?'Promedio de todo 2025, último año completo. ':'Comparación del mismo período: enero–agosto de ambos años. ')+(sort==='north'?'Orden geográfico de norte a sur.':sort==='name'?'Orden alfabético de ciudades.':'De mayor a menor concentración'+(sort==='ytd-desc'?' en 2026.':annualView?'.':' en 2025.'))+' Los valores no disponibles se muestran como s/d.';
+      view.querySelector('.pm25-panel-head h2 span').textContent=`(${current.length})`;
       if(!current.includes(selected)) selected=current[0]||all[0];
       document.getElementById('pm25-city-list').innerHTML=current.map((capital,index)=>{
-        const annual=pm25Annual(capital,2025),ytd=pm25Annual(capital,2026);
-        return `<button type="button" class="pm25-city-row" data-pm25-city="${esc(pm25Slug(capital.name))}" aria-pressed="${capital===selected}"><span><small>${index+1}</small><strong>${esc(capital.name)}</strong></span>${pm25Sparkline(capital)}<b>${pm25Number(annual?.value)}</b><b class="pm25-ytd-value"><i class="quality-${esc(ytd?.classification||'insuficiente')}"></i>${pm25Number(ytd?.value)}</b></button>`;
+        const annual=annualView?pm25Annual(capital,2025):pm25Period(capital,2025),ytd=pm25Period(capital,2026);
+        return `<button type="button" class="pm25-city-row" data-pm25-city="${esc(pm25Slug(capital.name))}" aria-pressed="${capital===selected}"><span><small>${index+1}</small><strong>${esc(capital.name)}</strong></span>${pm25Sparkline(capital)}<b>${pm25Number(annual?.value)}</b>${annualView?'':`<b class="pm25-ytd-value"><i class="quality-${esc(ytd?.classification||'insuficiente')}"></i>${pm25Number(ytd?.value)}</b>`}</button>`;
       }).join('');
       document.querySelectorAll('[data-pm25-city]').forEach(button=>button.addEventListener('click',()=>{
         selected=all.find(capital=>pm25Slug(capital.name)===button.dataset.pm25City)||selected;
@@ -375,7 +489,7 @@
       document.querySelectorAll('[data-pm25-macro]').forEach(item=>item.setAttribute('aria-pressed',String(item===button)));
       renderList();
     }));
-    document.getElementById('pm25-sort').addEventListener('change',event=>{sort=event.target.value;renderList();});
+    document.getElementById('pm25-sort').addEventListener('change',event=>{sort=event.target.value;if(sort==='full-year-desc')annualView=true;else if(sort==='annual-desc'||sort==='ytd-desc')annualView=false;renderList();});
     const download=()=>{
       const blob=new Blob(['\uFEFF'+pm25Csv(all)],{type:'text/csv;charset=utf-8'});
       const link=document.createElement('a');
@@ -386,6 +500,7 @@
     document.getElementById('pm25-download-bottom').addEventListener('click',download);
     renderList();
   }
+
 
   function interiorHero({ variant, eyebrow, title, text, image, alt, tool = "" }) {
     return `<section class="interior-hero interior-hero--${esc(variant)}"><figure class="interior-hero-media"><img src="${esc(image)}" alt="${esc(alt)}" width="1800" height="1350" fetchpriority="high"></figure><div class="shell interior-hero-inner"><div class="interior-hero-copy"><p class="eyebrow">${esc(eyebrow)}</p><h1>${esc(title)}</h1><p class="interior-hero-lede">${esc(text)}</p>${tool}</div></div></section>`;
@@ -488,7 +603,7 @@
       collection: params.get("coleccion") || "",
       caseSlug: params.get("caso") || "",
       sort: params.get("orden") || "relevancia",
-      page: Math.max(1,Number(params.get("pagina"))||1),
+      page: Math.max(1,Math.floor(Number(params.get("pagina")))||1),
     };
     const selectedCase = caseBySlug(state.caseSlug);
     const territories = allTerritories().sort((a, b) => a.name.localeCompare(b.name, "es"));
@@ -498,7 +613,7 @@
     const groupCounts = Object.fromEntries(Object.keys(groupLabels).map(group=>[group,catalogBaseRows.filter(row=>groupOf(row)===group).length]));
     const searchForm = `<form id="catalog-form" class="interior-hero-search" role="search"><label class="search-label" for="catalog-query">Buscar por palabras</label><div class="search-combo"><input id="catalog-query" type="search" value="${esc(state.q)}" placeholder="Título, autor, institución, tema o territorio"><button class="primary-button" type="submit">Buscar <span aria-hidden="true">→</span></button></div></form>`;
     const hero = interiorHero({ variant:"biblioteca", eyebrow:"Catálogo público", title:"Buscar en la Biblioteca", text:"Compara recursos por tema, territorio, formato e institución. Cada ficha explica qué contiene y enlaza a la fuente original.", image:"assets/interior-biblioteca.webp", alt:"Paisaje lacustre con volcanes", tool:searchForm });
-    const showLanding = !params.has('vista') && !selectedCase && !state.q && state.group==='todos' && state.theme==='todos' && state.territory==='todos' && state.type==='todos' && state.year==='todos' && state.relation==='todos' && !state.zone && !state.collection;
+    const showLanding = !params.has('vista') && !params.has('pagina') && !params.has('orden') && !selectedCase && !state.q && state.group==='todos' && state.theme==='todos' && state.territory==='todos' && state.type==='todos' && state.year==='todos' && state.relation==='todos' && !state.zone && !state.collection;
     if (showLanding) {
       view.innerHTML = hero + libraryLanding();
       document.getElementById("catalog-form").addEventListener("submit", event => {
@@ -538,7 +653,7 @@
         titulo:(a,b)=>String(a.titulo).localeCompare(String(b.titulo),"es"),
       };
       selected.sort(sorters[state.sort]||sorters.relevancia);
-      const pageSize = 6;
+      const pageSize = 10;
       const totalPages = Math.max(1,Math.ceil(selected.length/pageSize));
       state.page = Math.min(state.page,totalPages);
       const first = (state.page-1)*pageSize;
@@ -563,6 +678,7 @@
       document.querySelectorAll('[data-page]').forEach(button=>button.addEventListener('click',()=>{state.page=Number(button.dataset.page);sync();document.querySelector('.catalog-results-head')?.scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth',block:'start'});}));
     };
     const sync = () => {
+      render();
       const p = {vista:'catalogo'};
       if (state.q) p.q = state.q;
       if (state.group !== "todos") p.grupo = state.group;
@@ -577,14 +693,13 @@
       if (state.sort !== "relevancia") p.orden = state.sort;
       if (state.page > 1) p.pagina = state.page;
       history.replaceState(null, "", route("catalogo", p));
-      render();
     };
     document.getElementById("catalog-form").addEventListener("submit", event => { event.preventDefault(); state.q = document.getElementById("catalog-query").value.trim(); state.page=1; sync(); });
     document.querySelectorAll("[data-group]").forEach(button => button.addEventListener("click", () => { state.group = button.dataset.group; state.page=1; document.querySelectorAll("[data-group]").forEach(b => b.setAttribute("aria-pressed", String(b === button))); sync(); }));
     [["filter-theme","theme"],["filter-territory","territory"],["filter-type","type"],["filter-year","year"],["filter-relation","relation"]].forEach(([id,key]) => document.getElementById(id).addEventListener("change", event => { state[key] = event.target.value; state.page=1; sync(); }));
     document.getElementById('catalog-sort').addEventListener('change',event=>{state.sort=event.target.value;state.page=1;sync();});
     document.getElementById("clear-filters").addEventListener("click", () => { history.replaceState(null, "", route("catalogo",{vista:'catalogo'})); catalog(new URLSearchParams('vista=catalogo')); });
-    render();
+    sync();
   }
 
   const topicFeatureImages = [
@@ -636,7 +751,7 @@
       const start=y-((lines.length-1)*7);
       return `<text x="${x}" y="${start}" text-anchor="middle">${lines.map((line,index)=>`<tspan x="${x}" dy="${index?14:0}">${esc(line)}</tspan>`).join('')}</text>`;
     };
-    return `<svg class="topics-network" viewBox="0 0 520 410" role="group" aria-label="Relaciones del tema ${esc(center.name)}">${connections.map((item,index)=>{const [x,y]=positions[index];return `<line x1="260" y1="205" x2="${x}" y2="${y}"/><circle class="topics-network-joint" cx="${(260+x)/2}" cy="${(205+y)/2}" r="3"/>`;}).join('')}<a href="${route('tema',{tema:center.code})}" aria-label="Abrir ${esc(center.name)}"><circle class="topics-network-center" cx="260" cy="205" r="68"/>${text(center.name,260,199,true)}<text class="topics-network-count" x="260" y="235" text-anchor="middle">${center.count} recursos</text></a>${connections.map((item,index)=>{const [x,y]=positions[index];return `<a href="${route('tema',{tema:item.code})}" aria-label="Abrir ${esc(item.name)}; comparte ${item.count} recursos con ${esc(center.name)}"><circle class="topics-network-node" cx="${x}" cy="${y}" r="49"/>${text(item.name,x,y-2)}<text class="topics-network-count" x="${x}" y="${y+30}" text-anchor="middle">${item.count} cruces</text></a>`;}).join('')}</svg>`;
+    return `<svg class="topics-network" viewBox="0 0 520 410" role="group" aria-label="Relaciones del tema ${esc(center.name)}">${connections.map((item,index)=>{const [x,y]=positions[index];return `<line x1="260" y1="205" x2="${x}" y2="${y}"/><circle class="topics-network-joint" cx="${(260+x)/2}" cy="${(205+y)/2}" r="3"/>`;}).join('')}<a href="${route('tema',{tema:center.code})}" aria-label="Abrir ${esc(center.name)}"><circle class="topics-network-center" cx="260" cy="205" r="68"/>${text(center.name,260,199,true)}<text class="topics-network-count" x="260" y="235" text-anchor="middle">${center.count} recursos</text></a>${connections.map((item,index)=>{const [x,y]=positions[index];return `<a href="${route('cruce',{tema:center.code,otro:item.code})}" aria-label="Abrir ${esc(item.name)}; comparte ${item.count} recursos con ${esc(center.name)}"><circle class="topics-network-node" cx="${x}" cy="${y}" r="49"/>${text(item.name,x,y-2)}<text class="topics-network-count" x="${x}" y="${y+30}" text-anchor="middle">${item.count} ${item.count===1?'compartido':'compartidos'}</text></a>`;}).join('')}</svg>`;
   }
 
   function bindTopicsIndex() {
@@ -657,7 +772,7 @@
     const featured = [...themes].sort((a,b)=>b.count-a.count||a.name.localeCompare(b.name,'es')).slice(0,6);
     const alphabetical = [...themes].sort((a,b)=>a.name.localeCompare(b.name,'es'));
     const resourcesWithThemes = rows.filter(row=>(row.temas||[]).some(code=>themes.some(item=>item.code===code))).length;
-    const center = featured[0];
+    const center = featured.find(item=>themeConnections(item.code,themes).length)||featured[0];
     const connections = themeConnections(center.code,themes).slice(0,6);
     const pairKeys = new Set();
     rows.forEach(row=>{
@@ -665,10 +780,28 @@
       codes.forEach((code,index)=>codes.slice(index+1).forEach(other=>pairKeys.add(`${code}|${other}`)));
     });
     view.innerHTML = `${interiorHero({ variant:"temas", eyebrow:"Explorar", title:"Temas de salud ambiental", text:"Los recursos pueden pertenecer a varios temas. Esta organización permite seguir relaciones entre exposiciones, territorios, salud e institucionalidad.", image:"assets/interior-temas.webp", alt:"Paisaje desértico cubierto de flores moradas y amarillas" })}
-      <section class="topics-overview"><div class="shell topics-overview-grid"><div class="topics-overview-mark">${territoryLevelIcon('environment')}</div><div class="topics-overview-copy"><h2>Una mirada conectada a la salud ambiental</h2><p>Explora los temas que organizan la evidencia y descubre sus relaciones.</p></div><div class="topics-overview-stat"><strong>${themes.length}</strong><span>temas editoriales</span></div><div class="topics-overview-stat"><strong>${resourcesWithThemes}</strong><span>recursos relacionados</span></div><div class="topics-overview-stat"><strong>${pairKeys.size}</strong><span>cruces presentes</span></div></div></section>
-      <section class="topics-editorial"><div class="shell topics-editorial-grid"><div class="topics-featured"><div class="topics-section-head"><div><p class="eyebrow">Selección editorial</p><h2>Temas principales</h2></div><a href="#todos-los-temas">Ver todos los temas <span aria-hidden="true">↓</span></a></div><div class="topics-featured-list">${featured.map((item,index)=>{const image=topicFeatureImages[index%topicFeatureImages.length];return `<a class="topics-featured-row" href="${route('tema',{tema:item.code})}"><figure><img src="${image.src}" alt="${esc(image.alt)}" width="320" height="180" loading="lazy"></figure><div><h3>${esc(item.name)}</h3><p>${esc(themeConnectionCopy(item.code,themes))}</p></div><strong>${item.count}<span>${item.count===1?'recurso':'recursos'}</span></strong><i aria-hidden="true">→</i></a>`;}).join('')}</div></div><aside class="topics-crosses"><p class="eyebrow">Conexiones de la colección</p><h2>Cruces temáticos</h2><p>Los temas no viven aislados. Esta vista muestra cuántos recursos comparten el concepto central con otros temas.</p>${themeNetwork(center,connections)}<a class="topics-crosses-link" href="${route('tema',{tema:center.code})}">Explorar ${esc(center.name.toLowerCase())} <span aria-hidden="true">→</span></a></aside></div></section>
+      <section class="topics-overview"><div class="shell topics-overview-grid"><div class="topics-overview-mark">${territoryLevelIcon('environment')}</div><div class="topics-overview-copy"><h2>Una mirada conectada a la salud ambiental</h2><p>Explora los temas que organizan la evidencia y descubre sus relaciones.</p></div><div class="topics-overview-stat"><strong>${themes.length}</strong><span>temas editoriales</span></div><div class="topics-overview-stat"><strong>${resourcesWithThemes}</strong><span>recursos relacionados</span></div><div class="topics-overview-stat"><strong>${pairKeys.size}</strong><span>pares de temas conectados</span></div></div></section>
+      <section class="topics-editorial"><div class="shell topics-editorial-grid"><div class="topics-featured"><div class="topics-section-head"><div><p class="eyebrow">Selección editorial</p><h2>Temas principales</h2></div><a href="#todos-los-temas">Ver todos los temas <span aria-hidden="true">↓</span></a></div><div class="topics-featured-list">${featured.map((item,index)=>{const image=topicFeatureImages[index%topicFeatureImages.length];return `<a class="topics-featured-row" href="${route('tema',{tema:item.code})}"><figure><img src="${image.src}" alt="${esc(image.alt)}" width="320" height="180" loading="lazy"></figure><div><h3>${esc(item.name)}</h3><p>${esc(themeConnectionCopy(item.code,themes))}</p></div><strong>${item.count}<span>${item.count===1?'recurso':'recursos'}</span></strong><i aria-hidden="true">→</i></a>`;}).join('')}</div></div><aside class="topics-crosses"><p class="eyebrow">Conexiones de la colección</p><h2>Cruces temáticos</h2><p>Cada conexión reúne fichas que abordan ambos temas. Selecciona un tema y abre sus conexiones para ver los recursos compartidos.</p><label class="theme-cross-label" for="theme-cross-center">Tema central</label><select id="theme-cross-center">${themes.filter(t=>themeConnections(t.code,themes).length).map(t=>`<option value="${esc(t.code)}">${esc(t.name)}</option>`).join('')}</select><div id="theme-cross-network">${themeNetwork(center,connections)}</div><a class="topics-crosses-link" href="${route('tema',{tema:center.code})}">Explorar ${esc(center.name.toLowerCase())} <span aria-hidden="true">→</span></a></aside></div></section>
       <section class="topics-all" id="todos-los-temas"><div class="shell"><div class="topics-all-head"><div><p class="eyebrow">Índice completo</p><h2>Explorar todos los temas</h2></div><label for="topics-index-search"><span>Buscar un tema</span><input id="topics-index-search" type="search" placeholder="Escribe una palabra…"></label></div><div class="topics-all-index">${alphabetical.map(item=>`<a data-topic-search-name="${esc(item.name)}" href="${route('tema',{tema:item.code})}"><span>${esc(item.name)}</span><small>${item.count}</small></a>`).join('')}</div><p id="topics-index-empty" class="topics-index-empty" hidden>No se encontraron temas con ese nombre.</p>${territorial.length?`<div class="topics-geographic"><div><p class="eyebrow">Referencias geográficas</p><h3>Estos conceptos pertenecen a Territorios</h3><p>Se conservan sus conteos, pero se presentan aparte para no confundir un lugar con un tema de salud ambiental.</p></div><div>${territorial.map(item=>`<a href="${route('territorio',{territorio:item.territory.name})}"><span>${esc(item.name)}</span><small>${item.count} recursos · Ir a Territorios →</small></a>`).join('')}</div></div>`:''}</div></section>`;
     bindTopicsIndex();
+    bindThemeCrosses(themes,center);
+  }
+
+  function themeCross(params) {
+    const a=params.get('tema'),b=params.get('otro');
+    if(!labels.temas[a]||!labels.temas[b]||a===b)return notFound('Cruce no encontrado');
+    const selected=rows.filter(row=>row.temas.includes(a)&&row.temas.includes(b));
+    view.innerHTML=`${interiorHero({variant:'temas',eyebrow:'Cruce temático',title:label('temas',a)+' + '+label('temas',b),text:`${selected.length} recursos vinculados a ambos temas. Los vínculos secundarios se apoyan en el contenido de las fichas revisadas.`,image:'assets/interior-temas.webp',alt:'Paisaje del desierto florido'})}<section class="shell" style="padding-block:32px"><a class="text-link" href="#temas">← Volver a los temas</a>${selected.map(resultRow).join('')}</section>`;
+  }
+  function bindThemeCrosses(themes,initial) {
+    const select=document.getElementById('theme-cross-center');
+    if(!select)return;
+    select.value=initial.code;
+    select.addEventListener('change',()=>{
+      const center=themes.find(t=>t.code===select.value);
+      document.getElementById('theme-cross-network').innerHTML=themeNetwork(center,themeConnections(center.code,themes).slice(0,6));
+      const link=view.querySelector('.topics-crosses-link');link.href=route('tema',{tema:center.code});link.innerHTML=`Explorar ${esc(center.name.toLowerCase())} <span aria-hidden="true">→</span>`;
+    });
   }
 
   function topic(params) {
@@ -720,10 +853,19 @@
   }
 
   function territoryRegionContext(region) {
-    const related = relatedTerritoriesForRegion(region).slice(0,5);
-    const resourceText = region.count === 1 ? 'recurso asociado' : 'recursos asociados';
-    return `<p class="territories-context-kicker">Región seleccionada</p><h2>${esc(region.name.replace(/^Región (de |del )?/,''))}</h2><p class="territories-context-count"><strong>${region.count}</strong><span>${resourceText}</span></p><p class="territories-context-copy">La colección reúne aquí recursos vinculados explícitamente con ${esc(region.name)}. Explora sus escalas locales o abre el catálogo con el filtro territorial aplicado.</p>${region.territory?`<a class="territories-context-cta" href="${route('territorio',{territorio:region.territory})}">Ver recursos de la región <span aria-hidden="true">→</span></a>`:'<span class="territories-context-empty">Aún no hay recursos publicados para esta región.</span>'}${related.length?`<div class="territories-related"><p>Escalas relacionadas</p>${related.map(item=>`<a href="${route('territorio',{territorio:item.name})}"><span><i aria-hidden="true"></i>${esc(item.name)}</span><small>${item.count}</small></a>`).join('')}</div>`:''}`;
+    const profile=window.BIBLIOTECA_PERFILES_REGIONALES.find(p=>p.id===region.id);
+    const name=profile?.nombre||region.name.replace(/^Región (de |del )?/,'');
+    const resourceText=region.count===1?'recurso asociado':'recursos asociados';
+    return `<p class="territories-context-kicker">Región seleccionada</p><h2>${esc(name)}</h2><p class="territories-context-count"><strong>${region.count}</strong><span>${resourceText}</span></p>
+      ${profile?`<section class="region-editorial-profile"><h3>Perfil ambiental</h3><p class="territories-context-copy">${esc(profile.perfil)}</p><div class="region-profile-key"><h3>Claves ambientales</h3><p>${esc(profile.clavesAmbientales.join(' · '))}</p></div><div class="region-profile-key"><h3>Territorios documentados</h3><p>${esc(profile.territoriosDocumentados.join(' · '))}</p></div><details class="region-profile-sources"><summary>Fuentes del perfil · ${profile.fuentesPerfil.length}<span aria-hidden="true"> ↓</span></summary><ul>${profile.fuentesPerfil.map(source=>{
+        const resourceId=Number(String(source.resourceId||'').replace(/^B/,''));
+        const internal=source.resourceId&&rows.some(row=>row.id===resourceId);
+        const href=internal?route('recurso',{id:resourceId}):source.url;
+        return `<li><a href="${esc(href)}" ${internal?'':'target="_blank" rel="noopener noreferrer"'}>${esc([source.institucion,source.titulo].filter(Boolean).join(' · '))}<span aria-hidden="true"> ${internal?'→':'↗'}</span></a></li>`;
+      }).join('')}</ul></details></section>`:''}
+      ${region.territory?`<a class="territories-context-cta" href="${route('catalogo',{vista:'catalogo',territorio:region.territory})}">Explorar ${esc(name)} <span aria-hidden="true">→</span></a>`:'<span class="territories-context-empty">Aún no hay recursos publicados para esta región.</span>'}`;
   }
+
 
   function territoryIndexGroup({title,description,icon,items,selectedName}) {
     const ordered = [...items].sort((a,b)=>(a.name===selectedName?-1:0)-(b.name===selectedName?-1:0)||b.count-a.count||geoRank(a.name)-geoRank(b.name)||a.name.localeCompare(b.name,'es'));
@@ -788,9 +930,9 @@
     view.innerHTML = `${interiorHero({ variant:"territorios", eyebrow:"Explorar", title:"Territorios de Chile", text:"Un recurso puede relacionarse con una región, comuna, territorio ambiental o cuenca. Los niveles se mantienen separados para facilitar la búsqueda.", image:"assets/interior-territorios.webp", alt:"Valle habitado entre montañas" })}
       <section class="territories-atlas" data-selected-region="${esc(selected.id)}">
         <div class="shell territories-breadcrumb"><span>Chile</span><i aria-hidden="true">›</i><strong id="territories-region-crumb">${esc(selected.name)}</strong><a href="${route('catalogo',{vista:'catalogo'})}">Ver todos los recursos <span aria-hidden="true">→</span></a></div>
-        <div class="shell territories-atlas-grid">
+        <div class="shell territories-atlas-intro"><div><p class="eyebrow">Cartografía de la colección</p><h2>Chile</h2></div><p>Esta cartografía permite leer la colección desde una escala regional. Cada región incluye un perfil ambiental breve, claves temáticas, territorios documentados y acceso a los recursos vinculados.</p></div><div class="shell territories-atlas-grid">
           <div class="territories-map-story">
-            <div class="territories-country-intro"><p class="eyebrow">Cartografía de la colección</p><h2>Chile</h2><p>Explora por regiones y conecta cada lugar con comunas, territorios ambientales o cuencas.</p><div class="territories-national-count"><strong>${groups.pais[0]?.count||rows.length}</strong><span>recursos de alcance nacional</span></div></div>
+            
             <div class="territories-map-figure"><label for="territories-region-select">Seleccionar región</label><select id="territories-region-select">${regionItems.map(item=>`<option value="${esc(item.id)}" ${item.id===selected.id?'selected':''}>${esc(item.name)} · ${item.count}</option>`).join('')}</select>${territoryAtlasMap(regionItems,selected.id)}<div class="territories-map-label territories-map-label-north">Norte</div><div class="territories-map-label territories-map-label-south">Sur austral</div><div class="territories-map-scale" aria-hidden="true"><span>N</span><i></i><small>0&nbsp;&nbsp;&nbsp;500&nbsp;&nbsp;&nbsp;1.000 km</small></div>${mapCredit}</div>
           </div>
           <div class="territories-region-context" id="territories-region-context" aria-live="polite">${territoryRegionContext(selected)}</div>
@@ -809,187 +951,149 @@
   }
 
   function caseIndexRow(item) {
+    const shortName = item.slug === 'quintero-puchuncavi-ventanas' ? 'Quintero–Puchuncaví–Ventanas' : item.name;
     const linked = caseResources(item);
     return `<a class="case-index-row" data-case="${item.slug}" href="${route('caso',{caso:item.slug})}">
-      <span class="case-index-number" aria-hidden="true">${item.number}</span>
-      <span class="case-index-copy"><small>${esc(item.region)} · publicaciones ${esc(caseYearRange(item))}</small><strong>${esc(item.name)}</strong><span>${esc(item.summary)}</span></span>
+      
+      <span class="case-index-copy"><small>${esc(item.region)} · publicaciones ${esc(caseYearRange(item))}</small><strong>${esc(shortName)}</strong><span>${esc(item.summary)}</span></span>
       <span class="case-index-count">${linked.length} ${linked.length===1?'recurso':'recursos'} →</span>
     </a>`;
   }
 
   function caseFeature(item) {
     const linked = caseResources(item);
-    return `<a class="case-feature" href="${route('caso',{caso:item.slug})}"><span class="case-feature-number">${item.number}</span><span class="case-feature-copy"><small>${esc(item.region)}</small><strong>${esc(item.name)}</strong><span>${esc(item.summary)}</span><b>${linked.length} ${linked.length===1?'recurso':'recursos'} vinculados →</b></span></a>`;
+    return `<a class="case-feature" href="${route('caso',{caso:item.slug})}"><span class="case-feature-copy"><small>${esc(item.region)}</small><strong>${esc(item.name)}</strong><span>${esc(item.summary)}</span><b>${linked.length} ${linked.length===1?'recurso':'recursos'} vinculados →</b></span></a>`;
   }
 
   function casesLanding() {
     const uniqueResources = new Set(caseDefinitions.flatMap(item => caseResources(item).map(row => row.id))).size;
-    const featured = [caseBySlug('polimetales-arica'),caseBySlug('quintero-puchuncavi-ventanas')].filter(Boolean);
-    view.innerHTML = `<section class="cases-hero"><figure><img src="assets/interior-territorios.webp" alt="Paisaje chileno con un valle habitado entre montañas" width="1800" height="1350" fetchpriority="high"><figcaption class="photo-credit">Paisaje de Chile</figcaption></figure><div class="shell cases-hero-inner"><div><p class="cases-eyebrow">Casos y territorios</p><h1>Los lugares donde la salud ambiental se volvió historia.</h1><p>Seis territorios de Chile conectados con los recursos ya publicados. Los expedientes de Arica y Quintero–Puchuncaví–Ventanas incorporan secciones de lectura y cronologías continuas con sus fuentes.</p><div class="cases-actions"><a class="cases-primary" href="#explorar-casos">Explorar el mapa ↓</a><a class="cases-secondary" href="#indice-casos">Ver los seis casos</a></div></div></div></section>
-      <section class="cases-explorer" id="explorar-casos"><div class="shell cases-explorer-grid"><div class="cases-map-column"><p class="eyebrow">Explorar el territorio</p><h2>Chile, de norte a sur</h2><div class="cases-map-card">${casesMap()}<div class="cases-map-legend"><span><i style="background:#DCECE8"></i>Sin caso</span><span><i style="background:#A8D0C8"></i>1 caso</span><span><i style="background:#6DAFA3"></i>2 casos</span><span><i class="marker-key"></i>Caso documentado</span></div>${mapCredit}</div></div><div id="indice-casos" class="case-index"><div class="case-index-head"><span>6 casos</span><span>${uniqueResources} recursos únicos vinculados</span></div>${caseDefinitions.map(caseIndexRow).join('')}</div></div></section>
-      <section class="cases-featured"><div class="shell"><div class="section-heading"><div><p class="eyebrow">Casos destacados</p><h2>Dos historias para empezar</h2></div><a class="text-link" href="#acerca">Cómo se revisa la Biblioteca →</a></div><div class="cases-feature-grid">${featured.map(caseFeature).join('')}</div></div></section>
+    const featured = [caseBySlug('polimetales-arica'),caseBySlug('quintero-puchuncavi-ventanas'),caseBySlug('antofagasta'),caseBySlug('chanaral')].filter(Boolean);
+    view.innerHTML = `<section class="cases-hero"><figure><img src="assets/interior-territorios.webp" alt="Paisaje chileno con un valle habitado entre montañas" width="1800" height="1350" fetchpriority="high"><figcaption class="photo-credit">Paisaje de Chile</figcaption></figure><div class="shell cases-hero-inner"><div><p class="cases-eyebrow">Casos emblemáticos</p><h1>Los lugares donde la salud ambiental se volvió historia.</h1><p>Siete territorios de Chile conectados con los recursos ya publicados. Los expedientes de Arica y Quintero–Puchuncaví–Ventanas incorporan secciones de lectura y cronologías continuas con sus fuentes.</p><div class="cases-actions"><a class="cases-primary" href="#explorar-casos">Explorar el mapa ↓</a><a class="cases-secondary" href="#indice-casos">Ver todos los casos</a></div></div></div></section>
+      <section class="cases-explorer" id="explorar-casos"><div class="shell cases-explorer-grid"><div class="cases-map-column"><p class="eyebrow">Explorar el territorio</p><h2>Chile, de norte a sur</h2><div class="cases-map-card">${casesMap()}<div class="cases-map-legend"><span><i style="background:#DCECE8"></i>Sin caso</span><span><i style="background:#A8D0C8"></i>1 caso</span><span><i style="background:#6DAFA3"></i>2 casos</span><span><i class="marker-key"></i>Caso documentado</span></div>${mapCredit}<p class="case-map-note">Marcadores: ubicación referencial de cada caso.</p></div></div><div id="indice-casos" class="case-index"><div class="case-index-head"><span>${caseDefinitions.length} casos</span><span>${uniqueResources} recursos únicos vinculados</span></div>${caseDefinitions.map(caseIndexRow).join('')}</div></div></section>
+      <section class="cases-featured"><div class="shell"><div class="section-heading"><div><p class="eyebrow">Casos destacados</p><h2>Cuatro historias para empezar</h2></div><a class="text-link" href="#acerca">Cómo se revisa la Biblioteca →</a></div><div class="cases-feature-grid">${featured.map(caseFeature).join('')}</div></div></section>
       <section class="cases-method"><div class="shell cases-method-grid"><h2>Qué encontrarás en cada territorio</h2><div class="cases-method-items"><div><strong>Entender</strong><p>Una visión general construida con los recursos públicos vinculados al territorio.</p></div><div><strong>Profundizar</strong><p>Cronologías con fuentes y notas de interpretación en los expedientes que cuentan con un paquete territorial.</p></div><div><strong>Consultar</strong><p>Estudios, tesis, documentos y seminarios que ya forman parte de la Biblioteca.</p></div></div></div></section>`;
     bindCaseHover(document.querySelector('.cases-explorer'));
   }
 
-  function caseTabs(item, active) {
-    const chapterLabel = item.timeline?.length ? 'Cronología · 5 capítulos' : 'Cronología';
-    const resourceLabel = item.entries?.length ? `Documentos y publicaciones · ${caseResources(item).length}` : 'Recursos del caso';
-    return `<nav class="case-tabs" aria-label="Navegación del caso"><a href="${route('caso',{caso:item.slug})}" ${active==='overview'?'aria-current="page"':''}>Visión general</a><a href="${route('cronologia',{caso:item.slug})}" ${active==='chronology'?'aria-current="page"':''}>${chapterLabel}</a><a href="${route('catalogo',{caso:item.slug})}">${resourceLabel}</a></nav>`;
+  // CASOS ESTANDAR: una única interfaz para todos los expedientes.
+  const caseModel = item => window.BIBLIOTECA_CASOS.casos.find(c=>c.id===item.slug);
+  const caseCategory = code => window.BIBLIOTECA_CASOS.categorias[code];
+  const caseDate = value => String(value||'').replace(/\b(\d{4})-(\d{2})(?:-(\d{2}))?\b/g,(_,year,month,day)=>`${day?Number(day)+' de ':''}${['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'][Number(month)-1]} de ${year}`);
+  function caseEvidenceSources(group) {
+    const sources=[...(group.referencias||[]).map(uid=>({uid})),...(group.recursos||[]).map(recurso=>({recurso}))];
+    const seen=new Set(),visible=[],more=[];
+    sources.forEach(source=>{
+      const entry=source.uid?entryByUid(source.uid):null,row=rows.find(r=>r.id===(source.recurso??entry?.resource_id));
+      const type=norm(entry?.tipo_recurso||row?.tipo_documental||'Fuente');
+      (seen.has(type)?more:visible).push(source);seen.add(type);
+    });
+    return `<div class="chapter-sources">${visible.map(caseSourceHTML).join('')}</div>${more.length?`<details class="case-more"><summary>Otras fuentes (${more.length})</summary><div class="chapter-sources">${more.map(caseSourceHTML).join('')}</div></details>`:''}`;
   }
-
+  const casePendingText = 'La cronología histórica se publicará una vez verificados sus hitos y fuentes. Mientras tanto, puedes consultar los recursos documentales vinculados a este territorio.';
+  function caseTabs(item,active) {
+    const count=caseModel(item).capitulos.length;
+    return `<nav class="case-tabs" aria-label="Navegación del caso"><a href="${route('caso',{caso:item.slug})}" ${active==='overview'?'aria-current="page"':''}>Visión general</a><a href="${route('cronologia',{caso:item.slug})}" ${active==='chronology'?'aria-current="page"':''}>Cronología${count?` · ${count} capítulos`:''}</a><a href="${route('catalogo',{caso:item.slug})}">Documentos y publicaciones · ${caseResources(item).length}</a></nav>`;
+  }
+  function caseHero(item,active) {
+    const c=caseModel(item),p=c.presentacion;
+    return `<section class="case-detail-hero territorial-case-hero case-${esc(c.id)}"><figure><img src="${esc(p.imagen)}" alt="${esc(p.alternativo)}" width="1800" height="1350" fetchpriority="high"><figcaption class="photo-credit">${esc(p.credito)}</figcaption></figure><div class="shell case-detail-inner"><p class="case-breadcrumb"><a href="#casos">Casos emblemáticos</a><span>/</span>${esc(c.region)}<span>/</span>${esc(c.nombre)}</p><div class="case-detail-title"><div><p class="cases-eyebrow">Caso · ${esc(c.region)}</p><h1>${esc(c.nombre)}</h1><p>${esc(c.bajada)}</p></div>${caseTabs(item,active)}</div></div></section>`;
+  }
+  const caseSourceTitle = source => {
+    const entry=source.uid?entryByUid(source.uid):null;
+    const row=rows.find(r=>r.id===(source.recurso??entry?.resource_id));
+    return row?.titulo||entry?.titulo||source.etiqueta||'Fuente documental';
+  };
+  function caseSourceLink(source) {
+    const entry=source.uid?entryByUid(source.uid):null;
+    return source.recurso?route('recurso',{id:source.recurso}):entry?entryLink(entry):source.url;
+  }
+  function caseSourceHTML(source) {
+    const url=caseSourceLink(source),entry=source.uid?entryByUid(source.uid):null;
+    const kind=entry?.tipo_recurso||source.etiqueta||'Fuente';
+    return `<a href="${esc(url)}" ${!url.startsWith('#')?'target="_blank" rel="noopener noreferrer"':''}><span>${esc(kind)}</span><strong>${esc(caseSourceTitle(source))}</strong></a>`;
+  }
+  function caseDocumentRow(row) {
+    return `<a class="case-resource-row" href="${route('recurso',{id:row.id})}"><span><strong>${esc(row.titulo)}</strong><small>${esc([row.institucion,row.anio].filter(Boolean).join(' · '))}</small></span><b>${esc(typeLabel(row))}</b></a>`;
+  }
+  function caseDocumentGroups(item) {
+    const linked=caseResources(item),publications=[],official=[],other=[];
+    linked.forEach(row=>{
+      const type=norm(typeLabel(row));
+      if(/articulo|tesis|documento de trabajo|estudio de salud|cientifico|academico|investigacion/.test(type))publications.push(row);
+      else if(/ley|decreto|reglamento|informe|plan|programa|normativ|judicial|institucional|comunicado|derechos humanos|vigilancia/.test(type))official.push(row);
+      else other.push(row);
+    });
+    return [['Documentos oficiales',official],['Publicaciones',publications],['Otros recursos vinculados',other]].filter(([,items])=>items.length).map(([title,items])=>`<article><div class="case-section-title"><h2>${title}</h2></div>${items.slice(0,3).map(caseDocumentRow).join('')}${items.length>3?`<details class="case-more"><summary>Ver ${items.length-3} más</summary>${items.slice(3).map(caseDocumentRow).join('')}</details>`:''}</article>`).join('');
+  }
   function caseOverview(params) {
-    const item = caseBySlug(params.get('caso'));
-    if (!item) return notFound('Caso territorial no encontrado');
-    if (item.entries?.length) return importedCaseOverview(item);
-    const linked = caseResources(item).sort((a,b)=>(a.prioridad_formato||6)-(b.prioridad_formato||6)||(b.anio||0)-(a.anio||0));
-    const themes = caseThemeCounts(item);
-    const institutions = unique(linked.map(row=>row.institucion)).length;
-    const topThemes = themes.slice(0,4);
-    view.innerHTML = `<section class="case-detail-hero"><figure><img src="assets/interior-territorios.webp" alt="Paisaje chileno con un valle habitado entre montañas" width="1800" height="1350" fetchpriority="high"></figure><div class="shell case-detail-inner"><a class="case-back" href="#casos">← Casos y territorios</a><div class="case-detail-title"><div><p class="cases-eyebrow">Caso ${item.number} · ${esc(item.region)}</p><h1>${esc(item.name)}</h1><p>${esc(item.summary)}</p></div>${caseTabs(item,'overview')}</div></div></section>
-      <section class="shell case-intro"><div><p>Este expediente reúne únicamente recursos que ya forman parte de la edición pública de la Biblioteca. La narración histórica, las cifras sanitarias y los hitos del caso se incorporarán después de comprobar cada dato con su fuente.</p></div><blockquote>La base documental está disponible desde ahora; la cronología permanece en revisión editorial.</blockquote></section>
-      <section class="case-facts"><div class="shell"><div><small>Recursos vinculados</small><strong>${linked.length}</strong><span>fichas públicas</span></div><div><small>Años de publicación</small><strong>${esc(caseYearRange(item))}</strong><span>no corresponde al período histórico del caso</span></div><div><small>Temas principales</small><strong>${esc(topThemes.slice(0,2).map(([code])=>label('temas',code)).join(' · ')||'Por revisar')}</strong><span>según las fichas vinculadas</span></div><div><small>Instituciones</small><strong>${institutions}</strong><span>consignadas en las fichas</span></div></div></section>
-      <section class="shell case-content"><div><div class="case-section-head"><div><p class="eyebrow">Base documental</p><h2>Recursos en la Biblioteca</h2></div><a class="text-link" href="${route('catalogo',{caso:item.slug})}">Abrir con filtros →</a></div>${linked.map(resultRow).join('')}</div><aside><div class="case-aside-block"><p class="eyebrow">Lectura inicial</p><h2>Temas presentes</h2>${topThemes.map(([code,count])=>`<a href="${route('tema',{tema:code})}"><span>${esc(label('temas',code))}</span><small>${count}</small></a>`).join('')}</div><div class="case-aside-block"><p class="eyebrow">Profundizar</p><h2>Cronología</h2><p>La estructura está preparada para publicar hitos y capítulos con sus fuentes.</p><a class="text-link" href="${route('cronologia',{caso:item.slug})}">Ver estado de la cronología →</a></div></aside></section>
-      <section class="case-editorial-status"><div class="shell"><div><p class="cases-eyebrow">Situación editorial</p><h2>Historia y datos en verificación</h2><p>No se muestran cifras de demostración ni fechas aproximadas como hechos. El expediente crecerá a medida que se incorporen fuentes revisadas.</p></div><a class="cases-primary" href="${route('cronologia',{caso:item.slug})}">Continuar a la cronología →</a></div></section>`;
+    const item=caseBySlug(params.get('caso'));if(!item)return notFound('Caso territorial no encontrado');
+    const c=caseModel(item),p=c.presentacion,linked=caseResources(item);
+    const highlights=c.destacados.map(id=>c.hitos.find(e=>e.id===id)).filter(Boolean),current=c.situacion_actual;
+    view.innerHTML=`${caseHero(item,'overview')}<div class="case-sticky-tabs">${caseTabs(item,'overview')}</div>
+      <section class="case-facts case-standard-facts"><div class="shell"><div><small>Periodo del caso</small><strong>${esc(c.periodo||'Por documentar')}</strong></div><div><small>Hitos documentados</small><strong>${c.hitos.length||'En preparación'}</strong></div><div><small>Recursos vinculados</small><strong>${linked.length}</strong></div><div><small>Última revisión</small><strong>${esc(caseDate(c.ultima_revision)||'Sin fecha consignada')}</strong></div></div></section>
+      <section class="shell case-intro"><div><h2>Qué ocurrió</h2>${c.sintesis.map(text=>`<p>${esc(text)}</p>`).join('')}</div><blockquote>Presencia ambiental, exposición humana, riesgo estimado y efectos en salud describen cosas distintas. Cada fuente tiene su propio alcance.</blockquote></section>
+      <section class="shell case-place-grid case-standard-territory"><article><h2>Ubicación y contexto territorial</h2>${p.mapa?localCaseMap({...item,slug:p.mapa}):''}<p>${esc(c.territorios.join(' · '))}</p></article><article><h2>${c.hitos.length?'Territorio documentado':'Base documental disponible'}</h2><p>${esc(c.bajada)}</p>${!c.hitos.length?`<p>${casePendingText}</p><a class="text-link" href="${route('catalogo',{caso:c.id})}">Explorar documentos del caso →</a>`:''}</article></section>
+      ${c.evidencias.length?`<section class="case-health case-standard-evidence"><div class="shell"><div><h2>Evidencia sobre ambiente, exposición y salud</h2><p>Los grupos distinguen qué se midió o estudió. Las estimaciones de riesgo no equivalen a efectos clínicos observados.</p></div><div class="case-evidence-columns">${c.evidencias.map(group=>`<section class="case-evidence-group"><h3>${esc(group.grupo)}</h3><p>${esc(group.descripcion)}</p>${caseEvidenceSources(group)}</section>`).join('')}</div></div></section>`:''}
+      ${highlights.length?`<section class="shell case-standard-highlights"><div class="case-section-title"><h2>Hitos principales</h2><a href="${route('cronologia',{caso:c.id})}">Ver cronología completa →</a></div><div class="case-key-events">${highlights.map(e=>`<a href="${route('cronologia',{caso:c.id,hito:e.id})}"><time>${esc(caseDate(e.fecha))}</time><span><strong>${esc(e.titulo)}</strong><small>${esc(e.descripcion)}</small></span></a>`).join('')}</div></section>`:''}
+      <section class="shell case-library-sections">${caseDocumentGroups(item)}</section>
+      ${current?`<section class="case-current"><div class="shell"><div><p class="cases-eyebrow">Situación actual documentada · ${esc(caseDate(current.fecha))}</p><h2>${esc(current.titulo)}</h2><p>${esc(current.descripcion)}</p>${current.clave_lectura?`<p class="case-current-note">${esc(current.clave_lectura)}</p>`:''}<a class="cases-primary" href="${route('cronologia',{caso:c.id,hito:current.hito})}">Consultar el hito y sus fuentes →</a></div><figure><img src="${esc(p.imagen)}" alt="${esc(p.alternativo)}"><figcaption>${esc(p.credito)}</figcaption></figure></div></section>`:`<section class="case-editorial-status"><div class="shell"><div><p class="cases-eyebrow">Situación actual documentada</p><h2>Síntesis histórica en preparación</h2><p>Los recursos vinculados están disponibles; aún no se ha consolidado una síntesis fechada de la situación del caso.</p></div><a class="cases-primary" href="${route('cronologia',{caso:c.id})}">Ver estado de la cronología →</a></div></section>`}`;
   }
-
+  function caseChapterStats(events) {
+    const counts=new Map(),sources=new Set();
+    events.forEach(e=>{counts.set(e.categoria,(counts.get(e.categoria)||0)+1);[e.fuente_principal,...e.fuentes_complementarias].forEach(s=>sources.add(s.url));});
+    return `<strong>En este capítulo</strong><p>${Object.keys(window.BIBLIOTECA_CASOS.categorias).filter(key=>counts.has(key)).map(key=>`${esc(caseCategory(key))} · ${counts.get(key)} ${counts.get(key)===1?'hito':'hitos'}`).join('<br>')}<br>${sources.size} fuentes enlazadas</p>`;
+  }
+  function caseEventHTML(e) {
+    return `<article id="hito-${esc(e.id)}" data-event-id="${esc(e.id)}" data-event-year="${esc(e.fecha_inicio.slice(0,4))}"><div class="chapter-event-year"><time>${esc(caseDate(e.fecha))}</time><span class="event-kind ${esc(e.categoria)}">${esc(caseCategory(e.categoria))}</span></div><div class="chapter-event-copy"><h3>${esc(e.titulo)}</h3><p>${esc(e.descripcion)}</p>${e.clave_lectura?`<p class="chapter-note"><span class="case-reading-label">Clave de lectura</span>${esc(e.clave_lectura)}</p>`:''}<div class="chapter-sources">${e.fuentes_complementarias.map(caseSourceHTML).join('')}</div><a class="chapter-primary-source" href="${esc(e.fuente_principal.url)}" target="_blank" rel="noopener noreferrer">Consultar fuente principal ↗</a></div></article>`;
+  }
   function caseChronology(params) {
-    const item = caseBySlug(params.get('caso'));
-    if (!item) return notFound('Cronología no encontrada');
-    if (item.timeline?.length) return importedCaseChronology(item, params.get('hito'));
-    const linked = caseResources(item).sort((a,b)=>(a.anio||9999)-(b.anio||9999)||String(a.titulo).localeCompare(String(b.titulo),'es'));
-    view.innerHTML = `${caseTabs(item,'chronology')}<section class="shell chronology-head"><a class="back-link" href="${route('caso',{caso:item.slug})}">← ${esc(item.name)}</a><p class="eyebrow">Cronología territorial</p><h1>Una historia en preparación.</h1><p>La cronología definitiva distinguirá episodios ambientales, decisiones institucionales, evidencia sanitaria y acciones comunitarias. Cada hito deberá enlazar una fuente comprobada antes de publicarse.</p></section>
-      <section class="shell chronology-status"><strong>Estado editorial</strong><p>La maqueta entregada contiene fechas y cifras demostrativas. Esta integración conserva su estructura, pero no presenta esos valores como información verificada.</p></section>
-      <section class="shell chronology-resources"><div class="case-section-head"><div><p class="eyebrow">Base disponible</p><h2>Publicaciones actualmente vinculadas</h2></div><a class="text-link" href="${route('catalogo',{caso:item.slug})}">Ver en la Biblioteca →</a></div><p class="chronology-explanation">Los años siguientes corresponden a la publicación de cada recurso, no a la fecha de los hechos del caso.</p><div class="publication-timeline">${linked.map(row=>`<article><time>${esc(row.anio||'—')}</time><div><p class="resource-kind">${esc(typeLabel(row))}</p><h3><a href="${route('recurso',{id:row.id})}">${esc(row.titulo)}</a></h3><p class="meta">${esc(row.institucion||'Institución no consignada')}</p><p>${esc(row.descripcion||'Ficha sin resumen editorial.')}</p><a class="text-link" href="${route('recurso',{id:row.id})}">Ver ficha y fuente →</a></div></article>`).join('')}</div></section>
-      <section class="shell chronology-next"><span>Seguir explorando</span><div><a href="${route('catalogo',{caso:item.slug})}">Documentos del caso →</a><a href="#casos">Todos los territorios →</a></div></section>`;
+    const item=caseBySlug(params.get('caso'));if(!item)return notFound('Cronología no encontrada');
+    const c=caseModel(item);
+    if(c.estado_cronologia!=='documentada'){
+      view.innerHTML=`${caseHero(item,'chronology')}<div class="case-sticky-tabs">${caseTabs(item,'chronology')}</div><section class="shell chronology-head case-standard-pending"><p class="eyebrow">Estado de la cronología</p><h2>Cronología en preparación</h2><p>${casePendingText}</p><a class="cases-primary" href="${route('catalogo',{caso:c.id})}">Explorar documentos del caso →</a></section>`;
+      return;
+    }
+    const chapters=c.capitulos;
+    view.innerHTML=`<nav class="chapter-bar" aria-label="Capítulos de la cronología"><div class="shell"><span><a href="${route('caso',{caso:c.id})}">${esc(c.nombre)}</a><i>/</i><strong>Cronología</strong></span><div>${chapters.map(ch=>`<a href="#${esc(ch.id)}" data-chapter-link="${esc(ch.id)}"><b>${esc(ch.numero)}</b>${esc(ch.titulo)}</a>`).join('')}</div></div></nav>
+      <section class="shell chronology-2a-head"><div><p class="eyebrow">Cronología · ${esc(c.periodo)}</p><h1>${esc(c.nombre)}</h1><p>${c.hitos.length} hitos documentados en ${chapters.length} capítulos. Los hechos se distinguen por territorio y actividad, ambiente y exposición, salud, respuesta pública, y comunidad y justicia.</p>${caseTabs(item,'chronology')}<div class="chronology-scale" aria-label="Escala temporal">${chapters.map(ch=>`<a href="#${esc(ch.id)}" style="--span:1"><strong>${esc(ch.numero)}</strong><small>${esc(ch.periodo)}</small></a>`).join('')}</div></div></section>
+      <p class="shell chronology-explanation">Última revisión de los antecedentes: ${esc(caseDate(c.ultima_revision))}. Las referencias históricas que no tienen una ficha pública enlazan directamente a su fuente. Los periodos de estudio pueden abarcar más de un capítulo; se ordenan por su fecha inicial.</p>
+      <div class="chronology-chapters case-standard-chronology">${chapters.map(ch=>{const events=ch.hitos.map(id=>c.hitos.find(e=>e.id===id));return `<section class="chronology-chapter" id="${esc(ch.id)}" data-chapter="${esc(ch.id)}"><div class="chapter-photo"><img src="${esc(ch.imagen||c.presentacion.imagen)}" alt="Paisaje de referencia del capítulo ${esc(ch.numero)}" loading="lazy"><div class="chapter-photo-inner shell"><span class="chapter-number">${esc(ch.numero)}</span><div><p>Capítulo ${esc(ch.numero)} · ${esc(ch.periodo)}</p><h2>${esc(ch.titulo)}</h2></div></div><span class="photo-credit">${esc(ch.credito||c.presentacion.credito)}</span></div><div class="chapter-body shell"><div class="chapter-reading"><p class="chapter-intro">${esc(ch.introduccion)}</p><div class="chapter-events">${events.map(caseEventHTML).join('')}</div></div><aside>${caseChapterStats(events)}</aside></div></section>`;}).join('')}</div>
+      <section class="shell chronology-next chronology-2a-next"><span>Seguir explorando</span><div><a href="${route('caso',{caso:c.id})}">Visión general →</a><a href="${route('catalogo',{caso:c.id})}">Documentos del caso →</a><a href="#casos">Todos los territorios →</a></div></section>`;
+    if('IntersectionObserver' in window){
+      chapterObserver=new IntersectionObserver(entries=>entries.forEach(entry=>{
+        if(!entry.isIntersecting)return;
+        view.querySelectorAll('[data-chapter-link]').forEach(link=>{if(link.dataset.chapterLink===entry.target.dataset.chapter)link.setAttribute('aria-current','location');else link.removeAttribute('aria-current');});
+      }),{rootMargin:'-20% 0px -70% 0px'});
+      view.querySelectorAll('[data-chapter]').forEach(ch=>chapterObserver.observe(ch));
+    }
+    const requested=params.get('hito');
+    if(requested)requestAnimationFrame(()=>requestAnimationFrame(()=>{
+      const target=[...view.querySelectorAll('[data-event-id]')].find(el=>el.dataset.eventId===requested||(/^\d{4}$/.test(requested)&&el.dataset.eventYear===requested));
+      target?.scrollIntoView({behavior:'instant',block:'start'});
+    }));
   }
+  // FIN CASOS ESTANDAR
 
 
-  const entryByUid = uid => (payload.cases || []).flatMap(c => c.entries).find(e => e.resource_uid === uid);
-  const entryLink = entry => route('recurso', {id: entry.resource_id});
+  const entryByUid = uid => [...(payload.cases || []).flatMap(c => c.entries),...(payload.referencias_historicas||[])].find(e => e.resource_uid === uid);
+  const entryLink = entry => rows.some(r=>r.id===entry.resource_id)?route('recurso', {id: entry.resource_id}):entry.url;
   const sourceContext = entry => entry.resource_uid === 'ARICA-076' ? 'Posición de la empresa · Boliden'
     : entry.resource_uid === 'ARICA-020' ? 'Información institucional preliminar · estudio en revisión al 11-09-2026'
     : entry.resource_uid === 'ARICA-056' ? 'Expediente judicial en curso · revisión del paquete: 12-09-2026'
     : entry.tipo_evidencia;
-
-  const casePresentations = {
-    'polimetales-arica': {
-      heroImage:'assets/interior-territorios.webp', heroAlt:'Paisaje habitado del norte de Chile', heroCredit:'Paisaje del norte de Chile · archivo de la Biblioteca',
-      healthSection:'05_salud_evidencia', keyEventIndexes:[0,4,6,12,17], currentType:'remediacion', currentTitle:'Cerro Chuño: intervención territorial en curso',
-      chronologyTitle:'Cuarenta años en cinco capítulos.',
-      chapters:[
-        { num:'I', title:'La llegada', range:'1984–1985', from:1984, to:1985, image:'assets/interior-territorios.webp', credit:'Paisaje del norte de Chile · archivo de la Biblioteca' },
-        { num:'II', title:'Los barrios', range:'1989–1997', from:1986, to:1997, image:'assets/design-p1.webp', credit:'Costa del norte de Chile · archivo de la Biblioteca' },
-        { num:'III', title:'La evidencia', range:'1998–2009', from:1998, to:2009, image:'assets/interior-territorios.webp', credit:'Territorio del norte de Chile · archivo de la Biblioteca' },
-        { num:'IV', title:'La ley y el juicio', range:'2010–2019', from:2010, to:2019, image:'assets/design-p1.webp', credit:'Costa y ciudad del norte de Chile · archivo de la Biblioteca' },
-        { num:'V', title:'Hoy', range:'2020–actualidad', from:2020, to:9999, image:'assets/interior-territorios.webp', credit:'Paisaje habitado del norte de Chile · archivo de la Biblioteca' }
-      ]
-    },
-    'quintero-puchuncavi-ventanas': {
-      heroImage:'assets/design-p1.webp', heroAlt:'Costa chilena usada como referencia territorial', heroCredit:'Costa de Chile · imagen de referencia de la Biblioteca',
-      healthSection:'04_evidencia_salud', keyEventIndexes:[0,4,7,10,17], currentType:'situacion_actual', currentTitle:'PPDA, monitoreo y transición industrial',
-      chronologyTitle:'Seis décadas en cinco capítulos.',
-      chapters:[
-        { num:'I', title:'El polo industrial', range:'1964–1990', from:1964, to:1990, image:'assets/design-p1.webp', credit:'Costa de Chile · imagen territorial de referencia' },
-        { num:'II', title:'Normas y expansión', range:'1991–2010', from:1991, to:2010, image:'assets/interior-territorios.webp', credit:'Territorio habitado de Chile · archivo de la Biblioteca' },
-        { num:'III', title:'Las crisis sanitarias', range:'2011–2018', from:2011, to:2018, image:'assets/design-p1.webp', credit:'Costa de Chile · imagen territorial de referencia' },
-        { num:'IV', title:'La respuesta institucional', range:'2019–2023', from:2019, to:2023, image:'assets/interior-territorios.webp', credit:'Paisaje habitado de Chile · archivo de la Biblioteca' },
-        { num:'V', title:'Transición y vigilancia', range:'2024–actualidad', from:2024, to:9999, image:'assets/design-p1.webp', credit:'Costa de Chile · imagen territorial de referencia' }
-      ]
-    }
-  };
-
-  const presentationFor = item => casePresentations[item.slug] || casePresentations['polimetales-arica'];
-
-  const eventYear = event => Number(String(event.fecha_periodo || '').match(/\d{4}/)?.[0] || 9999);
-  const largeEventDate = event => {
-    const value = String(event.fecha_periodo || '');
-    if (!/(?:19|20)\d{2}-\d{2}/.test(value)) return value;
-    return unique([...value.matchAll(/(?:19|20)\d{2}/g)].map(match => match[0])).join('–');
-  };
-  const eventKind = type => {
-    const value = norm(type);
-    if (/salud|biomonitoreo|evidencia/.test(value)) return { key:'health', label:'Evidencia sanitaria' };
-    if (/justicia|ddhh/.test(value)) return { key:'community', label:'Comunidad y justicia' };
-    if (/regul|respuesta|marco|monitoreo|fiscal|calidad_aire|recuperacion|situacion_actual/.test(value)) return { key:'regulation', label:'Regulación' };
-    return { key:'environment', label:'Ambiental' };
-  };
-
-  function caseChapters(item) {
-    return presentationFor(item).chapters.map(def => {
-      const events = item.timeline.filter(event => eventYear(event) >= def.from && eventYear(event) <= def.to);
-      const counts = { environment:0, regulation:0, health:0, community:0 };
-      const sources = new Set();
-      events.forEach(event => {
-        counts[eventKind(event.tipo_hito).key] += 1;
-        event.resource_uids.forEach(uid => sources.add(uid));
-      });
-      return {...def, events, counts, sourceCount:sources.size, intro:events.slice(0,2).map(event => event.resumen).join(' ')};
-    });
-  }
-
-  function overviewResourceRow(entry) {
-    return `<a class="case-resource-row" href="${entryLink(entry)}"><span><strong>${esc(entry.titulo)}</strong><small>${esc([entry.institucion,entry.anio].filter(Boolean).join(' · '))}</small></span><b>${esc(entry.tipo_recurso || 'Recurso')}</b></a>`;
-  }
 
   function localCaseMap(item) {
     if (item.slug === 'quintero-puchuncavi-ventanas') return `<div class="case-local-map" role="img" aria-label="Esquema territorial de la bahía de Quintero y Puchuncaví que ubica Concón, Quintero y Ventanas">
       <svg viewBox="0 0 400 300" aria-hidden="true"><path d="M0 0 H145 C170 45 150 85 175 115 C202 146 176 186 198 218 C215 245 200 275 214 300 H0 Z" class="map-water"></path><path d="M145 0 C170 45 150 85 175 115 C202 146 176 186 198 218 C215 245 200 275 214 300" class="map-coast"></path><path d="M205 74 L315 65 L345 184 L238 222 L182 154 Z" class="map-polygon"></path><circle cx="214" cy="116" r="4" class="map-site"></circle><circle cx="230" cy="144" r="3" class="map-place"></circle><circle cx="275" cy="95" r="3" class="map-place"></circle><circle cx="190" cy="238" r="3" class="map-place"></circle><text x="224" y="110">Complejo Ventanas</text><text x="238" y="149">Quintero</text><text x="284" y="99">Puchuncaví</text><text x="198" y="244">Concón</text><text x="28" y="250" class="map-ocean">Océano Pacífico</text><text x="246" y="205" class="map-city">BAHÍA DE QUINTERO</text></svg>
       <div class="case-map-key"><span><i class="polygon"></i>Territorio documentado</span><span><i class="site"></i>Complejo industrial</span><span><i class="place"></i>Comunas y localidades</span></div><small>Esquema territorial basado en los lugares consignados por las fuentes</small>
     </div>`;
+    if(item.slug !== 'polimetales-arica') return '';
     return `<div class="case-local-map" role="img" aria-label="Esquema territorial de Arica que ubica Sitio F, Los Industriales y Cerro Chuño">
       <svg viewBox="0 0 400 300" aria-hidden="true"><path d="M0 0 H150 C170 60 140 120 160 180 C175 230 150 270 165 300 H0 Z" class="map-water"></path><path d="M150 0 C170 60 140 120 160 180 C175 230 150 270 165 300" class="map-coast"></path><path d="M400 30 C330 60 300 120 320 300" class="map-border"></path><path d="M230 110 L250 140 L235 165 L205 155 Z" class="map-polygon"></path><circle cx="232" cy="140" r="4" class="map-site"></circle><circle cx="212" cy="150" r="3" class="map-place"></circle><circle cx="245" cy="152" r="3" class="map-place"></circle><text x="240" y="132">Sitio F</text><text x="157" y="160">Los Industriales</text><text x="252" y="158">Cerro Chuño</text><text x="185" y="215" class="map-city">ARICA</text><text x="28" y="250" class="map-ocean">Océano Pacífico</text><text x="330" y="60" class="map-country">PERÚ</text></svg>
       <div class="case-map-key"><span><i class="polygon"></i>Área de intervención</span><span><i class="site"></i>Antiguo acopio</span><span><i class="place"></i>Poblaciones</span></div><small>Esquema territorial basado en los lugares consignados por las fuentes</small>
     </div>`;
   }
 
-  function importedCaseOverview(item) {
-    const presentation = presentationFor(item);
-    const linked = caseResources(item);
-    const officialTypes = /ley|reglamento|informe|programa|plan|cuenta pública|comunicado|portal institucional|licitación|normativa|judicial|fiscalización|balance oficial|datos oficiales|expediente|procedimiento sancionatorio|ficha de medida|fuente institucional/i;
-    const publicationTypes = /artículo|tesis|documento de trabajo|trabajo académico|estudio de salud|científico|académico/i;
-    const newsTypes = /noticia|reportaje|columna|periodismo/i;
-    const rank = (a,b) => (b.importancia_1_10||0)-(a.importancia_1_10||0)||(a.orden||999)-(b.orden||999);
-    const official = item.entries.filter(e => officialTypes.test(e.tipo_recurso)).sort(rank);
-    const publications = item.entries.filter(e => publicationTypes.test(e.tipo_recurso)).sort(rank);
-    const news = item.entries.filter(e => newsTypes.test(e.tipo_recurso)).sort((a,b)=>(a.orden||999)-(b.orden||999));
-    const health = item.entries.filter(e => e.seccion === presentation.healthSection).sort(rank).slice(0,4);
-    const keyEvents = presentation.keyEventIndexes.map(index => item.timeline[index]).filter(Boolean);
-    const intro = [item.timeline[0],item.timeline[1]].filter(Boolean).map(event => event.resumen).join(' ');
-    const current = item.timeline.find(event => event.tipo_hito === presentation.currentType) || item.timeline.at(-1);
-    view.innerHTML = `<section class="case-detail-hero territorial-case-hero case-${esc(item.slug)}"><figure><img src="${presentation.heroImage}" alt="${esc(presentation.heroAlt)}" width="1800" height="1350" fetchpriority="high"><figcaption class="photo-credit">${esc(presentation.heroCredit)}</figcaption></figure><div class="shell case-detail-inner"><p class="case-breadcrumb"><a href="#casos">Casos y territorios</a><span>/</span>${esc(item.region)}<span>/</span>${esc(item.name)}</p><div class="case-detail-title"><div><p class="cases-eyebrow">Caso · ${esc(item.region)}</p><h1>${esc(item.name)}</h1><p>${esc(item.summary)}</p></div>${caseTabs(item,'overview')}</div></div></section>
-      <div class="case-sticky-tabs">${caseTabs(item,'overview')}</div>
-      <section class="shell case-intro"><div><p>${esc(intro)}</p></div><blockquote>Presencia ambiental, exposición humana, riesgo estimado y efectos en salud describen cosas distintas. Cada ficha conserva el alcance y las limitaciones de su fuente.</blockquote></section>
-      <section class="case-facts"><div class="shell"><div><small>Base documental</small><strong>${linked.length} recursos</strong><span>fichas únicas vinculadas al caso</span></div><div><small>Lecturas territoriales</small><strong>${item.entries.length}</strong><span>síntesis y notas del paquete editorial</span></div><div><small>Historia documentada</small><strong>${item.timeline.length} hitos</strong><span>cada uno enlazado con sus fuentes</span></div><div><small>Periodo del caso</small><strong>${esc(item.period)}</strong><span>revisión editorial: ${esc(item.reviewed_at)}</span></div></div></section>
-      <section class="shell case-place-grid"><article><h2>Ubicación y contexto territorial</h2>${localCaseMap(item)}<p>${esc(item.timeline[1]?.resumen || item.summary)}</p></article><article><div class="case-section-title"><h2>Hitos principales</h2><a href="${route('cronologia',{caso:item.slug})}">Ver cronología completa →</a></div><div class="case-key-events">${keyEvents.map(event=>`<a href="${route('cronologia',{caso:item.slug,hito:eventYear(event)})}"><time>${esc(largeEventDate(event))}</time><span><strong>${esc(event.hito)}</strong><small>${esc(event.resumen)}</small></span></a>`).join('')}</div></article></section>
-      <section class="case-health"><div class="shell"><div><h2>Efectos y resultados en salud estudiados</h2><p>Lo que describen las publicaciones vinculadas, manteniendo sus límites de interpretación.</p></div><div class="case-health-grid">${health.map(entry=>`<a href="${entryLink(entry)}"><strong>${esc(entry.resultado_salud || entry.titulo)}</strong><span>${esc(entry.descripcion_corta)}</span></a>`).join('')}</div></div></section>
-      <section class="shell case-library-sections"><article><div class="case-section-title"><h2>Documentos oficiales</h2><a href="${route('catalogo',{caso:item.slug})}">Ver todos (${official.length}) →</a></div>${official.slice(0,3).map(overviewResourceRow).join('')}</article><article><div class="case-section-title"><h2>Publicaciones</h2><a href="${route('catalogo',{caso:item.slug})}">Ver todas (${publications.length}) →</a></div>${publications.slice(0,3).map(overviewResourceRow).join('')}</article></section>
-      ${news.length ? `<section class="shell case-news"><div class="case-section-title"><h2>Noticias históricas</h2><a href="${route('catalogo',{caso:item.slug})}">Ver todas (${news.length}) →</a></div><div class="case-news-grid">${news.slice(0,3).map((entry,index)=>`<a href="${entryLink(entry)}"><span class="case-news-photo"><img src="${index===1?'assets/design-p1.webp':'assets/interior-territorios.webp'}" alt="Paisaje territorial de referencia"></span><small>${esc([entry.anio,entry.institucion].filter(Boolean).join(' · '))}</small><strong>${esc(entry.titulo)}</strong></a>`).join('')}</div></section>` : ''}
-      <section class="case-current"><div class="shell"><div><p class="cases-eyebrow">Situación actual</p><h2>${esc(presentation.currentTitle)}</h2><p>${esc(current?.resumen || item.summary)}</p>${current?.nota_editorial?`<p class="case-current-note">${esc(current.nota_editorial)}</p>`:''}<a class="cases-primary" href="${route('cronologia',{caso:item.slug})}">Profundizar en la cronología →</a></div><figure><img src="${presentation.heroImage}" alt="${esc(presentation.heroAlt)}"><figcaption>${esc(presentation.heroCredit)}</figcaption></figure></div></section>`;
-  }
-
-  function importedCaseChronology(item, selectedYear) {
-    const presentation = presentationFor(item);
-    const chapters = caseChapters(item);
-    view.innerHTML = `<nav class="chapter-bar" aria-label="Capítulos de la cronología"><div class="shell"><span><a href="${route('caso',{caso:item.slug})}">${esc(item.name)}</a><i>/</i><strong>Cronología</strong></span><div>${chapters.map(chapter=>`<a href="#chapter-${chapter.num}" data-chapter-link="${chapter.num}"><b>${chapter.num}</b>${esc(chapter.title)}</a>`).join('')}</div></div></nav>
-      <section class="shell chronology-2a-head"><div><p class="eyebrow">Cronología · ${esc(item.period)}</p><h1>${esc(presentation.chronologyTitle)}</h1><p>Cada capítulo cruza los hechos con la evidencia sanitaria, las decisiones institucionales y la respuesta de la comunidad. Toda fecha enlaza sus fuentes.</p><div class="chronology-scale" aria-label="Escala temporal">${chapters.map(chapter=>`<a href="#chapter-${chapter.num}" style="--span:${Math.max(2,chapter.to===9999?7:chapter.to-chapter.from+1)}"><strong>${chapter.num}</strong><small>${esc(chapter.range)}</small></a>`).join('')}</div></div></section>
-      <div class="chronology-chapters">${chapters.map(chapter=>`<section class="chronology-chapter" id="chapter-${chapter.num}" data-chapter="${chapter.num}"><div class="chapter-photo"><img src="${chapter.image}" alt="Paisaje territorial de apertura del capítulo ${chapter.num}"><div class="chapter-photo-inner shell"><span class="chapter-number">${chapter.num}</span><div><p>Capítulo ${chapter.num} · ${esc(chapter.range)}</p><h2>${esc(chapter.title)}</h2></div></div><span class="photo-credit">${esc(chapter.credit)}</span></div><div class="chapter-body shell"><div class="chapter-reading"><p class="chapter-intro">${esc(chapter.intro)}</p><div class="chapter-events">${chapter.events.map((event,eventIndex)=>{const kind=eventKind(event.tipo_hito);return `<article id="hito-${chapter.num}-${eventIndex}" data-event-year="${eventYear(event)}"><div class="chapter-event-year"><time>${esc(largeEventDate(event))}</time><span class="event-kind ${kind.key}">${kind.label}</span></div><div class="chapter-event-copy"><h3>${esc(event.hito)}</h3><p>${esc(event.resumen)}</p>${event.nota_editorial?`<p class="chapter-note">${esc(event.nota_editorial)}</p>`:''}<div class="chapter-sources">${event.resource_uids.map(entryByUid).filter(Boolean).map(entry=>`<a href="${entryLink(entry)}"><span>${esc(entry.tipo_recurso || 'Fuente')}</span><strong>${esc(entry.titulo)}</strong></a>`).join('')}</div><a class="chapter-primary-source" href="${esc(event.fuente_principal)}" target="_blank" rel="noopener noreferrer">Consultar fuente principal ↗</a></div></article>`}).join('')}</div></div><aside><strong>En este capítulo</strong><p>${chapter.counts.environment} ${chapter.counts.environment===1?'hito ambiental':'hitos ambientales'}<br>${chapter.counts.regulation} ${chapter.counts.regulation===1?'decisión institucional':'decisiones institucionales'}<br>${chapter.counts.health} ${chapter.counts.health===1?'estudio sanitario':'estudios sanitarios'}<br>${chapter.counts.community} ${chapter.counts.community===1?'acción comunitaria o judicial':'acciones comunitarias o judiciales'}<br>${chapter.sourceCount} fuentes enlazadas</p></aside></div></section>`).join('')}</div>
-      <section class="shell chronology-next chronology-2a-next"><span>Seguir explorando</span><div><a href="${route('catalogo',{caso:item.slug})}">Documentos del caso →</a><a href="#casos">Todos los territorios →</a></div></section>`;
-    view.querySelectorAll('.chapter-bar a[href^="#chapter-"],.chronology-scale a').forEach(link => link.addEventListener('click', event => {
-      event.preventDefault();
-      document.querySelector(link.getAttribute('href'))?.scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'});
-    }));
-    if ('IntersectionObserver' in window) {
-      const observer = new IntersectionObserver(entries => entries.forEach(entry => {
-        if (!entry.isIntersecting) return;
-        view.querySelectorAll('[data-chapter-link]').forEach(link => link.toggleAttribute('aria-current', link.dataset.chapterLink === entry.target.dataset.chapter));
-      }), {rootMargin:'-20% 0px -70% 0px'});
-      view.querySelectorAll('[data-chapter]').forEach(chapter => observer.observe(chapter));
-    }
-    if (selectedYear) requestAnimationFrame(() => requestAnimationFrame(() => {
-      view.querySelector(`[data-event-year="${Number(selectedYear)}"]`)?.scrollIntoView({behavior:'instant',block:'start'});
-    }));
-  }
 
   const resourceEntries = row => (payload.cases || []).flatMap(c=>c.entries).filter(e=>e.resource_id===row.id);
 
@@ -1030,6 +1134,7 @@
   }
 
   function resourceCitation(row, entries) {
+    if (row.fecha_revision_documental) return [[row.autor_ponente || row.institucion, '(' + (row.anio || 's. f.') + ').', String(row.titulo_fuente||row.titulo).replace(/\.$/,'') + '.', row.institucion ? row.institucion + '.' : '', row.doi ? 'https://doi.org/' + row.doi : row.url].join(' ')];
     const supplied = unique(entries.map(entry=>entry.cita_recomendada).filter(Boolean));
     if (supplied.length) return supplied;
     const author = row.autor_ponente || row.institucion || 'Autoría no consignada';
@@ -1037,6 +1142,12 @@
     return [`${author} (${row.anio || 's. f.'}). ${row.titulo}.${publication}`];
   }
 
+  function documentaryHeader(row) { return ''; }
+  function documentaryBody(row) {
+    const f=row.ficha;
+    return `<section class="resource-section documentary-body"><h2>De qué trata</h2><p>${esc(f.resumen)}</p><p class="meta">${esc(f.advertencia||'')}</p>${(f.enlaces_relacionados||[]).length?`<h3>Enlaces relacionados</h3>${f.enlaces_relacionados.map(l=>`<p><a href="${esc(l.url)}" target="_blank" rel="noopener noreferrer">${esc(l.titulo)}</a></p>`).join("")}`:""}<h3>Palabras clave</h3><div class="tag-list">${f.palabras_clave.map(k=>`<a class="tag" href="${route('catalogo',{vista:'catalogo',q:k})}">${esc(k)}</a>`).join('')}</div><button type="button" class="text-link" id="editorial-toggle" aria-expanded="false" aria-controls="editorial-info">Ver revisión editorial</button><div id="editorial-info" hidden><h3>Alcance de la consulta</h3><p>${esc(f.interno.alcance)}</p><p>Autoría completa: ${esc(f.autoria_completa.join('; '))}</p><p>Título de referencia: ${esc(f.interno.titulo_original)}</p><ul>${f.interno.pendientes.map(p=>`<li>${esc(p.texto)}</li>`).join('')}</ul></div></section>`;
+  }
+  function documentaryFacts(row) {const f=row.ficha;return `<dt>Tipo de estudio o documento</dt><dd>${esc(f.tipo_estudio||f.tipo)}</dd><dt>Idioma de la versión consultada</dt><dd>${esc(f.idioma||'Por confirmar')}</dd>${f.doi?`<dt>DOI</dt><dd><a href="https://doi.org/${esc(f.doi)}" target="_blank" rel="noopener noreferrer">${esc(f.doi)}</a></dd>`:''}${f.isbn?`<dt>ISBN</dt><dd>${esc(f.isbn)}</dd>`:''}`;}
   function resource(params) {
     const row = rows.find(r => r.id === Number(params.get("id")));
     if (!row) return notFound("Recurso no encontrado");
@@ -1047,11 +1158,11 @@
     const territoryLinks = territoryObjects(row).map(territory=>`<a href="${route('territorio',{territorio:territory.name})}"><span>${esc(territory.name)}</span><i aria-hidden="true">›</i></a>`);
     const importance = resourceRelation(row, entries).map(text=>`<p>${esc(text)}</p>`).join('');
     const citations = resourceCitation(row, entries).map(citation=>`<p>${esc(citation)}</p>`).join('');
-    view.innerHTML = `<section class="shell resource-layout"><article class="resource-main"><a class="back-link" href="${route("catalogo")}">← Volver al catálogo</a><header class="resource-header"><p class="eyebrow">${esc(typeLabel(row))}</p><h1 class="resource-title">${esc(row.titulo)}</h1><p class="meta resource-byline">${esc(byline(row))}</p><p class="resource-summary">${esc(row.descripcion || "Ficha sin resumen editorial.")}</p></header>${resourceVisual(row)}${casesHtml?`<div class="case-resource-links">${casesHtml}</div>`:''}<section class="resource-section resource-importance"><h2>¿Por qué importa?</h2>${importance}</section>${caseEvidence(row,entries)}<section class="resource-section resource-citation"><h3>Cita sugerida</h3>${citations}</section><p class="resource-library-note">La Biblioteca conserva los metadatos y el enlace. El material permanece alojado y administrado por su fuente original.</p></article><aside class="resource-aside" aria-label="Información del recurso"><div class="resource-aside-panel"><h2>Información del recurso</h2><dl><dt>Institución o publicación</dt><dd>${esc(row.institucion||"Sin identificar")}</dd><dt>Autoría o participación</dt><dd>${esc(row.autor_ponente||"No consignada")}${row.rol_autoria?` · ${esc(row.rol_autoria)}`:""}</dd><dt>Año</dt><dd>${esc(row.anio||"Sin precisar")}</dd><dt>Formato</dt><dd>${esc((row.formatos||[]).map(f=>label("formatos",f)).join(" · ")||"Sin clasificar")}</dd><dt>Relación con salud ambiental</dt><dd>${esc(row.tipo_relacion_salud_ambiental||"Por determinar")}</dd><dt>Estado del enlace</dt><dd class="resource-link-status status-${esc(row.estado_url||'pendiente')}">${esc(statusLabel(row))}</dd></dl><a class="source-button" href="${esc(row.url)}" target="_blank" rel="noopener noreferrer">Abrir fuente original <span aria-hidden="true">↗</span></a><section class="resource-related"><h3>Temas relacionados</h3><nav aria-label="Temas relacionados">${relatedList(themeLinks,'Sin temas asignados')}</nav></section><section class="resource-related"><h3>Territorios relacionados</h3><nav aria-label="Territorios relacionados">${relatedList(territoryLinks,'Sin territorio asignado')}</nav></section><p class="resource-aside-note">La Biblioteca organiza y describe el recurso para facilitar su consulta y conserva el vínculo con la fuente original.</p></div></aside></section>`;
+    view.innerHTML = `<section class="shell resource-layout"><article class="resource-main"><a class="back-link" href="${route("catalogo")}">← Volver al catálogo</a><header class="resource-header"><p class="eyebrow">${esc(typeLabel(row))}</p><h1 class="resource-title">${esc(row.titulo)}</h1><p class="meta resource-byline">${esc(byline(row))}</p><p class="resource-summary">${esc(row.descripcion || "Ficha sin resumen editorial.")}</p></header>${documentaryHeader(row)}${resourceVisual(row)}${casesHtml?`<div class="case-resource-links">${casesHtml}</div>`:''}${documentaryBody(row)}<section class="resource-section resource-citation"><h3>Cita sugerida</h3>${citations}</section><p class="resource-library-note">La Biblioteca conserva los metadatos y el enlace. El material permanece alojado y administrado por su fuente original.</p></article><aside class="resource-aside" aria-label="Información del recurso"><div class="resource-aside-panel"><h2>Información del recurso</h2><dl><dt>Institución o publicación</dt><dd>${esc(row.institucion||"Sin identificar")}</dd><dt>Autoría o participación</dt><dd>${esc(row.autor_ponente||"No consignada")}${row.rol_autoria?` · ${esc(row.rol_autoria)}`:""}</dd><dt>Año</dt><dd>${esc(row.anio||"Sin precisar")}</dd><dt>Formato</dt><dd>${esc((row.formatos||[]).map(f=>label("formatos",f)).join(" · ")||"Sin clasificar")}</dd><dt>Relación con salud ambiental</dt><dd>${esc(row.tipo_relacion_salud_ambiental||"Por determinar")}</dd>${documentaryFacts(row)}<dt>${row.fecha_revision_documental ? "Estado técnico anterior del enlace" : "Estado del enlace"}</dt><dd class="resource-link-status status-${esc(row.estado_url||'pendiente')}">${esc(statusLabel(row))}</dd></dl><a class="source-button" href="${esc(row.url)}" target="_blank" rel="noopener noreferrer">Abrir fuente original <span aria-hidden="true">↗</span></a><section class="resource-related"><h3>Temas relacionados</h3><nav aria-label="Temas relacionados">${relatedList(themeLinks,'Sin temas asignados')}</nav></section><section class="resource-related"><h3>Territorios relacionados</h3><nav aria-label="Territorios relacionados">${relatedList(territoryLinks,'Sin territorio asignado')}</nav></section><p class="resource-aside-note">La Biblioteca organiza y describe el recurso para facilitar su consulta y conserva el vínculo con la fuente original.</p></div></aside></section>`;
   }
 
   function about() {
-    view.innerHTML = `${interiorHero({ variant:"acerca", eyebrow:"Acerca de", title:"Una biblioteca para comprender y enseñar.", text:"La Biblioteca Digital de Salud Ambiental de Chile organiza clases, seminarios, investigaciones, presentaciones y documentos técnicos de acceso público.", image:"assets/interior-acerca.webp", alt:"Bosque cubierto de niebla" })}<section class="shell about-grid about-grid-continuation"><div><h2>Qué conserva</h2><p>Conserva metadatos, criterios editoriales y enlaces. Los archivos originales permanecen en YouTube, repositorios universitarios, organismos públicos y otras fuentes.</p></div><div><h2>Qué incluye</h2><p>Incluye recursos con relación directa con la salud y también material ambiental contextual necesario para comprender regulación, institucionalidad, contaminación, justicia ambiental y cambio climático en Chile.</p><h2>Cómo se revisa</h2><p>Las fichas publicadas pasan por revisión humana. Los datos no comprobados, como duración o extensión, se omiten hasta contar con evidencia.</p></div></section>`;
+    view.innerHTML = `${interiorHero({ variant:"acerca", eyebrow:"Acerca de", title:"Una biblioteca para comprender y enseñar.", text:"La Biblioteca Digital de Salud Ambiental de Chile organiza clases, seminarios, investigaciones, presentaciones y documentos técnicos de acceso público.", image:"assets/interior-acerca.webp", alt:"Bosque cubierto de niebla" })}<section class="shell about-grid about-grid-continuation project-credit"><div><h2>Sobre el proyecto</h2><p>La Biblioteca Digital de Salud Ambiental de Chile nace del interés por reunir y hacer más accesible la información sobre salud ambiental en Chile, conectando documentos, investigaciones, material docente, datos y recursos provenientes de distintas instituciones y territorios.</p></div><div><h2>Iniciativa y desarrollo</h2><p>Pablo Aguirre Araya, médico general de zona en Arica, trabaja en atención primaria y es integrante del Departamento de Medio Ambiente del Colegio Médico Regional Arica.</p><p>Pablo Aguirre Araya concibió y desarrolló la Biblioteca, desde su estructura editorial y arquitectura de información hasta la organización de contenidos y la plataforma digital.</p></div></section><section class="shell about-grid about-grid-continuation"><div><h2>Qué conserva</h2><p>Conserva metadatos, criterios editoriales y enlaces. Los archivos originales permanecen en YouTube, repositorios universitarios, organismos públicos y otras fuentes.</p></div><div><h2>Qué incluye</h2><p>Incluye recursos con relación directa con la salud y también material ambiental contextual necesario para comprender regulación, institucionalidad, contaminación, justicia ambiental y cambio climático en Chile.</p><h2>Cómo se revisa</h2><p>Las fichas publicadas pasan por revisión humana. Los datos no comprobados, como duración o extensión, se omiten hasta contar con evidencia.</p></div></section>`;
   }
 
   function notFound(title) {
@@ -1059,18 +1170,36 @@
   }
 
   function renderRoute() {
+    chapterObserver?.disconnect();
+    chapterObserver = null;
     const raw = location.hash.slice(1) || "inicio";
-    const [name, query = ""] = raw.split("?");
+    const separator = raw.indexOf('?');
+    const name = separator < 0 ? raw : raw.slice(0,separator);
+    const query = separator < 0 ? '' : raw.slice(separator+1);
     const params = new URLSearchParams(query);
-    ({ inicio: home, catalogo: () => catalog(params), temas: topics, tema: () => topic(params), territorios: territories, territorio: () => territory(params), datos: () => dataPage(params), casos: casesLanding, caso: () => caseOverview(params), cronologia: () => caseChronology(params), recurso: () => resource(params), acerca: about }[name] || (() => notFound("Página no encontrada")))();
+    const dataScroll = name === "datos" && view.querySelector(".data-product-tabs") ? window.scrollY : null;
+    ({ inicio: home, catalogo: () => catalog(params), temas: topics, cruce: () => themeCross(params), tema: () => topic(params), territorios: territories, territorio: () => territory(params), datos: () => dataPage(params), casos: casesLanding, caso: () => caseOverview(params), cronologia: () => caseChronology(params), recurso: () => resource(params), acerca: about }[name] || (() => notFound("Página no encontrada")))();
     document.title = name === "inicio" ? "Biblioteca Digital de Salud Ambiental de Chile" : `${view.querySelector("h1")?.textContent || "Biblioteca"} · Biblioteca de Salud Ambiental`;
-    window.scrollTo({ top: 0, behavior: "instant" });
-    const navRoute = ({tema:'temas',territorio:'territorios',caso:'casos',cronologia:'casos',recurso:'catalogo'}[name]||name);
+    window.scrollTo({ top: dataScroll ?? 0, behavior: "instant" });
+    const editorialToggle=document.getElementById('editorial-toggle');if(editorialToggle)editorialToggle.onclick=()=>{const panel=document.getElementById('editorial-info');panel.hidden=!panel.hidden;editorialToggle.setAttribute('aria-expanded',String(!panel.hidden));};
+    const navRoute = ({tema:'temas',cruce:'temas',territorio:'territorios',caso:'casos',cronologia:'casos',recurso:'catalogo'}[name]||name);
     document.querySelectorAll('.site-header nav a').forEach(a => a.setAttribute('aria-current', a.hash === `#${navRoute}` ? 'page' : 'false'));
     document.querySelector('.site-header nav').classList.remove('is-open');
     document.querySelector('.menu-toggle').setAttribute('aria-expanded', 'false');
-    document.getElementById('main').focus({preventScroll:true});
+    (dataScroll !== null ? view.querySelector('.data-product-tabs a[aria-current="page"]') : document.getElementById('main'))?.focus({preventScroll:true});
   }
+
+  // Local section links must not replace the application's hash route.
+  view.addEventListener('click', event => {
+    const link = event.target.closest('a[href^="#"]');
+    if (!link || event.defaultPrevented || event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+    const target = document.getElementById(link.getAttribute('href').slice(1));
+    if (!target || !view.contains(target)) return;
+    event.preventDefault();
+    if (!target.hasAttribute('tabindex')) target.setAttribute('tabindex','-1');
+    target.focus({preventScroll:true});
+    target.scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth',block:'start'});
+  });
 
   document.querySelector('.skip-link').addEventListener('click', event => {
     event.preventDefault(); document.getElementById('main').focus({preventScroll:false});

@@ -1,0 +1,22 @@
+.region-editorial-profile{text-align:left;min-width:0}
+.region-editorial-profile h3{font:600 11px/1.4 var(--sans,'Segoe UI',sans-serif);letter-spacing:.1em;text-transform:uppercase;color:var(--turquesa);margin:0 0 9px}
+.region-editorial-profile .territories-context-copy{font-size:15px;line-height:1.7;margin:0}
+.region-profile-key{border-top:1px solid var(--line);padding-top:15px;margin-top:18px}
+.region-profile-key p{font-size:14px;line-height:1.65;color:var(--ink-2);margin:0;overflow-wrap:break-word}
+.region-profile-sources{margin-top:18px;font-size:12px;line-height:1.6;color:var(--ink-2)}
+.region-profile-sources summary{cursor:pointer;color:var(--turquesa);width:fit-content;list-style:none;padding:5px 0}
+.region-profile-sources summary::-webkit-details-marker{display:none}
+.region-profile-sources[open] summary span{display:inline-block;transform:rotate(180deg)}
+.region-profile-sources ul{list-style:none;padding:10px 0 0;margin:0;border-top:1px solid var(--line)}
+.region-profile-sources li+li{margin-top:9px}
+.region-profile-sources a{color:var(--turquesa);overflow-wrap:anywhere}
+.region-profile-sources summary:focus-visible,.region-profile-sources a:focus-visible{outline:2px solid var(--turquesa);outline-offset:4px}
+@media(max-width:700px){.region-editorial-profile .territories-context-copy{font-size:15px}.region-profile-sources{width:100%}.region-profile-key{margin-top:16px}}
+/* Introducción superior: el mapa y el perfil aprovechan el ancho antes reservado al texto lateral. */
+.territories-atlas-intro{display:grid;grid-template-columns:280px minmax(0,1fr);align-items:center;gap:36px;padding-block:26px;border-bottom:1px solid var(--line)}
+.territories-atlas-intro h2{font-size:42px;margin:6px 0 0}
+.territories-atlas-intro>p{max-width:760px;font-size:16px;line-height:1.65;color:var(--ink-2);margin:0}
+.territories-map-story{display:block}
+@media(min-width:1101px){.territories-atlas-grid{grid-template-columns:280px minmax(0,1fr) minmax(310px,.82fr)}.territories-map-story>.territories-map-figure{left:0;margin-inline:0}}
+@media(min-width:768px) and (max-width:1100px){.territories-atlas-intro{grid-template-columns:240px minmax(0,1fr);gap:28px}.territories-atlas-grid{grid-template-columns:240px minmax(0,1fr);gap:28px}.territories-region-context{grid-column:2;grid-row:1}.territories-index{grid-column:1/-1;grid-row:2}}
+@media(max-width:767px){.territories-atlas-intro{grid-template-columns:1fr;gap:12px;padding-block:22px}.territories-atlas-intro h2{font-size:36px}.territories-atlas-intro>p{font-size:15px}.territories-map-story>.territories-map-figure{left:0}}
