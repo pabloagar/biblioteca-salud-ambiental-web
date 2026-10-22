@@ -1,0 +1,82 @@
+{
+  "captureDate": "2026-10-22",
+  "timezone": "America/Santiago",
+  "browser": "Google Chrome (headless, Playwright)",
+  "browserVersion": "155.0.8059.85",
+  "sourceCommit": "1d5e3a950d203ba36fc17a5fdba0f494d5da7b93",
+  "method": "Fresh contexts. Mobile 390x844 CSS px at deviceScaleFactor 2; desktop 1440x900 at 1. Original viewport screenshots, no crop, no DOM edits, no artificial screens. WebP encoding only; no recoloring or simulated dark mode.",
+  "captures": [
+    {
+      "file": "inicio-mobile.webp",
+      "source": "biblioteca-mobile.png",
+      "url": "https://pabloagar.github.io/biblioteca-salud-ambiental-web/",
+      "capturedAt": "2026-10-22T11:49:34.615Z",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "scale": 2,
+      "width": 780,
+      "height": 1688,
+      "bytes": 115250,
+      "rawSha256": "df16ce77578713ef9efc8de525c0da643aad56edf07b12a81a23eec45189d5ae",
+      "sha256": "33034bf780f4e5abe183587090f7b0c71f2f07e7d6003aa26a02a3a1ef039e69",
+      "status": 200,
+      "errors": []
+    },
+    {
+      "file": "inicio-desktop.webp",
+      "source": "biblioteca-desktop.png",
+      "url": "https://pabloagar.github.io/biblioteca-salud-ambiental-web/",
+      "capturedAt": "2026-10-22T11:49:34.615Z",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "scale": 1,
+      "width": 1440,
+      "height": 900,
+      "bytes": 102238,
+      "rawSha256": "ce822a4aa42e5ff4b918c448c5ec63b0c9f4615f84e89cb9e10d2ed8cdd2d32f",
+      "sha256": "b2598b9b06688e7cd9fff12249d4ec4ec57071eb5751dd65e9c847fe99f2a3e3",
+      "status": 200,
+      "errors": []
+    },
+    {
+      "file": "catalogo-mobile.webp",
+      "source": "biblioteca_catalogo-mobile.png",
+      "url": "https://pabloagar.github.io/biblioteca-salud-ambiental-web/#catalogo?vista=catalogo",
+      "capturedAt": "2026-10-22T11:49:34.615Z",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "scale": 2,
+      "width": 780,
+      "height": 1688,
+      "bytes": 131006,
+      "rawSha256": "12f67cb7b62e2a820d824b4529a2be83ca78c1f17910f6191698cb6f6c7ad503",
+      "sha256": "0fd1c3c26327e0fa649106338239ae4ee90de49d4fe5dc4068173b98db824ddf",
+      "status": 200,
+      "errors": []
+    },
+    {
+      "file": "catalogo-desktop.webp",
+      "source": "biblioteca_catalogo-desktop.png",
+      "url": "https://pabloagar.github.io/biblioteca-salud-ambiental-web/#catalogo?vista=catalogo",
+      "capturedAt": "2026-10-22T11:49:34.615Z",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "scale": 1,
+      "width": 1440,
+      "height": 900,
+      "bytes": 136280,
+      "rawSha256": "faa0fc4f39ac6f3a4aaa0fd7ec2614c560ee935a0954b148dab8df1dc2772e68",
+      "sha256": "0f2375119bee1dd79bf57944aac988a29a3757259ccfeae15f66cb32a0ff77ca",
+      "status": 200,
+      "errors": []
+    }
+  ]
+}
