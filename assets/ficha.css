@@ -1,0 +1,50 @@
+/* Páginas estáticas de ficha (recurso/<id>/) generadas por src/seo.py. */
+@font-face { font-family:Newsreader; src:url("newsreader-400.ttf") format("truetype"); font-weight:400; font-display:swap; }
+@font-face { font-family:Newsreader; src:url("newsreader-500.ttf") format("truetype"); font-weight:500; font-display:swap; }
+
+:root {
+  --bg:#F7F4EF; --surface:#fff; --line:#E4DED4; --ink:#10333D; --muted:#5F6E75;
+  --petroleo:#0F3B47; --turquesa:#0F6F62; --terracota:#C0633A;
+  --serif:Newsreader, Georgia, serif;
+  --sans:system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+* { box-sizing:border-box; }
+body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.6 var(--sans); }
+a { color:var(--turquesa); text-underline-offset:2px; }
+.seo-shell { width:min(100% - 32px, 820px); margin-inline:auto; }
+
+.seo-header { background:var(--surface); border-bottom:3px solid var(--petroleo); }
+.seo-header .seo-shell { display:flex; flex-wrap:wrap; gap:12px 24px; align-items:center; justify-content:space-between; padding:14px 0; }
+.seo-brand { display:flex; align-items:center; gap:10px; color:var(--muted); font-size:12px; line-height:1.2; text-decoration:none; }
+.seo-brand .seo-mark { padding-left:10px; border-left:4px solid var(--terracota); color:var(--ink); font:400 30px/1 var(--serif); }
+.seo-brand strong { display:block; color:var(--ink); font-size:14px; }
+.seo-header .seo-shell > a:last-child { font-size:14px; font-weight:600; }
+
+.seo-main { padding:48px 0 56px; }
+.seo-eyebrow { margin:0 0 8px; color:var(--turquesa); font-size:12px; font-weight:600; letter-spacing:.08em; text-transform:uppercase; }
+h1 { margin:0; font:400 clamp(30px, 6vw, 46px)/1.12 var(--serif); overflow-wrap:break-word; }
+h2 { margin:0 0 10px; font:500 22px/1.25 var(--serif); }
+.seo-byline { margin:14px 0 0; color:var(--muted); }
+.seo-lede { margin:18px 0 0; font-size:18px; }
+.seo-actions { display:flex; flex-wrap:wrap; gap:12px; margin:24px 0 8px; }
+.seo-button { display:inline-flex; align-items:center; gap:6px; min-height:44px; padding:10px 18px; border:1px solid var(--petroleo); border-radius:6px; background:var(--surface); color:var(--petroleo); font-weight:600; text-decoration:none; }
+.seo-button.seo-primary { background:var(--petroleo); color:#fff; }
+section { margin-top:32px; padding-top:24px; border-top:1px solid var(--line); }
+.seo-cita { overflow-wrap:anywhere; }
+dl { display:grid; grid-template-columns:minmax(0, 200px) minmax(0, 1fr); gap:10px 20px; margin:0; }
+dt { color:var(--muted); font-size:14px; }
+dd { margin:0; overflow-wrap:anywhere; }
+.seo-note { margin-top:32px; color:var(--muted); font-size:14px; }
+.seo-index { margin:28px 0 0; padding:0; list-style:none; }
+.seo-index li { padding:10px 0; border-bottom:1px solid var(--line); }
+.seo-index span { display:block; color:var(--muted); font-size:13px; }
+
+.seo-footer { padding:28px 0 36px; background:var(--petroleo); color:#C9D6DA; font-size:13px; }
+.seo-footer a { color:inherit; }
+.seo-footer p { margin:6px 0; }
+
+@media (max-width:600px) {
+  .seo-main { padding:32px 0 40px; }
+  dl { grid-template-columns:1fr; gap:2px; }
+  dd { margin-bottom:10px; }
+}

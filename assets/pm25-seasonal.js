@@ -58,4 +58,3 @@ $('capital').addEventListener('change',()=>{years();render();});for(const id of 
 $('typical').onclick=()=>{mode='typical';render();};$('comparison').onclick=()=>{mode='comparison';render();};years();render();
 
 }};
-

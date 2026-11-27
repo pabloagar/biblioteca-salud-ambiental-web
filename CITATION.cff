@@ -1,0 +1,23 @@
+cff-version: 1.2.0
+message: "Si usas esta biblioteca, su contenido o su código, cítala así."
+title: "Biblioteca Digital de Salud Ambiental de Chile"
+type: software
+authors:
+  - given-names: Pablo
+    family-names: Aguirre Araya
+license:
+  - Apache-2.0
+  - CC-BY-4.0
+url: "https://biblioteca-salud-ambiental-web.pablo-aguirre-araya.workers.dev/"
+repository-code: "https://github.com/pabloagar/biblioteca-salud-ambiental-web"
+abstract: >-
+  Catálogo curado de clases, seminarios, estudios y documentos sobre salud
+  ambiental en Chile, con casos territoriales y datos de PM2.5 en capitales
+  regionales. El código está bajo Apache 2.0; el contenido y las fotografías,
+  bajo CC BY 4.0.
+keywords:
+  - salud ambiental
+  - Chile
+  - biblioteca digital
+  - calidad del aire
+  - PM2.5

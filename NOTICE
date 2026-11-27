@@ -1,0 +1,21 @@
+Biblioteca Digital de Salud Ambiental de Chile
+Copyright 2026 Pablo Aguirre Araya
+
+Este producto fue creado por Pablo Aguirre Araya.
+https://biblioteca-salud-ambiental-web.pablo-aguirre-araya.workers.dev/
+
+El código fuente se distribuye bajo la licencia Apache 2.0 (LICENSE).
+El contenido y las fotografías se distribuyen bajo CC BY 4.0
+(LICENSE-CONTENIDO.md).
+
+Las redistribuciones y obras derivadas deben conservar este aviso.
+
+Componentes de terceros incluidos:
+
+- Newsreader, Copyright 2020 The Newsreader Project Authors.
+  SIL Open Font License 1.1 (static_site/assets/NEWSREADER-OFL.txt).
+- Lucide Static 0.468.0, Copyright Lucide Contributors; partes de Feather,
+  Copyright Cole Bemis. Licencia ISC (static_site/assets/LUCIDE-LICENSE.txt).
+- geoBoundaries gbOpen CHL ADM1, BCN Chile / OCHA ROLAC. CC BY 3.0 IGO
+  (static_site/assets/regions.js).
+- Datos de calidad del aire: SINCA, Ministerio del Medio Ambiente de Chile.
