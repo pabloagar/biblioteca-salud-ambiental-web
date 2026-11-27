@@ -18,7 +18,7 @@
   const words = value => norm(value).split(/\s+/).filter(Boolean);
   const matchesText = (row, query) => {
     const evidence = territorialEntries.filter(e => e.resource_id === row.id).map(e => [e.titulo, e.hallazgos_clave, e.lugares_sectores, e.actores_clave, e.tags, e.cita_recomendada, e.identificador_externo].join(' '));
-    const haystack = norm([row.busqueda, row.resumen, row.titulo, row.titulo_fuente, row.doi, ...(row.palabras_clave || []), row.descripcion, row.utilidad, row.institucion, row.autor_ponente, ...(row.temas || []).map(t => label("temas", t)), ...territoryNames(row), ...evidence].join(" "));
+    const haystack = norm([row.busqueda, row.resumen, row.titulo, row.cita.titulo, ...row.cita.autoria, row.cita.doi, ...(row.palabras_clave || []), row.descripcion, row.utilidad, row.institucion, row.autor_ponente, ...(row.temas || []).map(t => label("temas", t)), ...territoryNames(row), ...evidence].join(" "));
     return words(query).every(word => haystack.includes(word));
   };
   const typeLabel = row => {
@@ -209,7 +209,7 @@
 
   function previewTerritories(items) {
     return `<section class="home-section territory-section preview-territories" aria-labelledby="territory-heading">
-      <figure class="territory-scene"><img src="assets/territory-volcano-road.jpg" width="3000" height="4000" alt="Camino entre árboles que conduce hacia un volcán nevado" loading="lazy"></figure>
+      <figure class="territory-scene"><img src="assets/territory-volcano-road.webp" width="1350" height="1800" alt="Camino entre árboles que conduce hacia un volcán nevado" loading="lazy"></figure>
       <div class="shell territory-composition">
         <div class="territory-story"><div class="territory-story-intro"><p class="eyebrow">03 / Territorios de Chile</p><h2 id="territory-heading">El lugar también es parte de la historia.</h2><p>Explora estudios y experiencias desde los territorios donde se sitúan.</p><a class="text-link" href="#territorios">Explorar todos los territorios <span aria-hidden="true">→</span></a></div>
           <div class="territory-scales"><p class="eyebrow">Un territorio, muchas escalas</p><h3><span>Región · Comuna</span> <span>Territorio ambiental · Cuenca</span></h3><p>Una misma publicación puede leerse desde diferentes geografías y escalas territoriales, conectando personas, lugares y saberes.</p><p class="territory-caption">Camino al volcán</p></div>
@@ -433,7 +433,7 @@
     view.innerHTML = `${pm25CommonHero}
       <nav class="data-product-tabs" aria-label="Visualizaciones de PM2.5"><div class="shell"><a href="#datos" aria-current="page">Serie anual</a><a id="pm25-seasonal-link" href="#datos?vista=estacional">Ciclo estacional</a></div></nav>
       <section class="pm25-controls"><div class="shell"><span>Filtrar por macrozona</span><div class="pm25-filter-chips">${macrozones.map(item=>`<button type="button" data-pm25-macro="${esc(item)}" aria-pressed="${item===macro}">${esc(item)}</button>`).join('')}</div><a href="#pm25-metodologia">¿Cómo leer estos datos? ↓</a></div></section>
-      
+
       <section class="shell pm25-dashboard" id="pm25-anual"><section class="pm25-ranking-panel"><div class="pm25-panel-head"><div><p class="eyebrow">Comparación nacional</p><h2>Capitales regionales <span>(16)</span></h2></div><label>Comparación y orden<select id="pm25-sort"><option value="full-year-desc">Anual 2025 · mayor a menor</option><option value="annual-desc">Ene–ago 2025 · mayor a menor</option><option value="ytd-desc">Ene–ago 2026 · mayor a menor</option><option value="north">Norte a sur</option><option value="name">Nombre A–Z</option></select></label></div><p id="pm25-order-explanation" class="pm25-table-note" aria-live="polite"></p><div class="pm25-table-head"><span># · Ciudad</span><span>Tendencia<br>2013–2025</span><span>Ene–ago 2025<br>µg/m³</span><span>Ene–ago 2026<br>µg/m³</span></div><div id="pm25-city-list"></div><p class="pm25-table-note"><span class="pm25-mini-reference"><i aria-hidden="true"></i>Guía OMS: 5 µg/m³, media anual.</span>Las discontinuidades indican períodos sin un promedio publicable. Un año insuficiente no se interpola.</p></section><section class="pm25-detail-panel" id="pm25-detail" aria-live="polite"></section></section>
       <section class="shell pm25-seasonal" style="margin-top:24px;margin-bottom:24px"><div class="sheet" id="pm25-period-summary"></div></section>
       <section class="shell pm25-comparison"><div class="pm25-section-head"><div><p class="eyebrow">Las capitales en una misma escala</p><h2>Trece años de series, una sola escala</h2><p>Cada línea corresponde a una capital. La ciudad seleccionada queda destacada; 2026 parcial no se incorpora a esta comparación.</p></div><button type="button" id="pm25-download-top">Descargar serie completa ↓</button></div><div id="pm25-comparison-chart"></div>${pm25GuidelineNote}</section>
@@ -623,19 +623,27 @@
       });
       return;
     }
-    view.innerHTML = `${hero}
-      <section class="shell catalog-tools catalog-tools-after-hero">${selectedCase?`<div class="case-filter-context"><span>Expediente territorial</span><strong>${esc(selectedCase.name)}</strong><a href="${route('caso',{caso:selectedCase.slug})}">Volver al caso →</a></div>`:''}<div class="quick-filters" aria-label="Categorías de recursos">${[["todos","Todos los recursos",catalogBaseRows.length], ...Object.entries(groupLabels).map(([value,text])=>[value,text,groupCounts[value]])].map(([value,text,count]) => `<button class="chip" type="button" data-group="${value}" aria-pressed="${state.group === value}"><span>${esc(text)}</span><small>${count}</small></button>`).join("")}</div>
-      <div class="catalog-body"><aside class="catalog-filter-sidebar" aria-label="Filtros del catálogo"><div class="catalog-filter-heading"><h2>Filtrar resultados</h2><button id="clear-filters" type="button">Limpiar todo</button></div><div class="filter-grid">
+    view.innerHTML = `<div class="catalog-search-results">${hero}
+      <section class="shell catalog-tools catalog-tools-after-hero">${selectedCase?`<div class="case-filter-context"><span>Expediente territorial</span><strong>${esc(selectedCase.name)}</strong><a href="${route('caso',{caso:selectedCase.slug})}">Volver al caso →</a></div>`:''}<div class="catalog-filter-toggle-wrap"><button type="button" id="catalog-filter-toggle" aria-expanded="false" aria-controls="catalog-groups catalog-filters">Filtros</button></div><div id="catalog-groups" class="quick-filters" aria-label="Categorías de recursos">${[["todos","Todos los recursos",catalogBaseRows.length], ...Object.entries(groupLabels).map(([value,text])=>[value,text,groupCounts[value]])].map(([value,text,count]) => `<button class="chip" type="button" data-group="${value}" aria-pressed="${state.group === value}"><span>${esc(text)}</span><small>${count}</small></button>`).join("")}</div>
+      <div class="catalog-body"><aside id="catalog-filters" class="catalog-filter-sidebar" aria-label="Filtros del catálogo"><div class="catalog-filter-heading"><h2>Filtrar resultados</h2><button id="clear-filters" type="button">Limpiar todo</button></div><div class="filter-grid">
         <label><span>Tema</span><select id="filter-theme"><option value="todos">Todos los temas</option>${Object.keys(labels.temas || {}).filter(t => rows.some(r => (r.temas || []).includes(t))).sort((a,b)=>label("temas",a).localeCompare(label("temas",b),"es")).map(t=>`<option value="${t}" ${state.theme===t?"selected":""}>${esc(label("temas",t))}</option>`).join("")}</select></label>
         <label><span>Territorio</span><select id="filter-territory"><option value="todos">Todos los territorios</option>${territories.map(t=>`<option value="${esc(t.name)}" ${state.territory===t.name?"selected":""}>${esc(t.name)}</option>`).join("")}</select></label>
         <label><span>Tipo de recurso</span><select id="filter-type"><option value="todos">Todos los tipos</option>${typeCodes.map(t=>`<option value="${t}" ${state.type===t?"selected":""}>${esc(label("tipos_recurso",t))}</option>`).join("")}</select></label>
         <label><span>Año de publicación</span><select id="filter-year"><option value="todos">Todos los años</option>${years.map(y=>`<option value="${y}" ${state.year===String(y)?"selected":""}>${y}</option>`).join("")}</select></label>
         <label><span>Relación con salud ambiental</span><select id="filter-relation"><option value="todos">Todas las relaciones</option>${["directa","contextual","tangencial"].map(r=>`<option value="${r}" ${state.relation===r?"selected":""}>${r[0].toUpperCase()+r.slice(1)}</option>`).join("")}</select></label>
-      </div></aside><div class="catalog-results-column"><div class="catalog-results-head"><strong id="result-count"></strong><label>Ordenar por<select id="catalog-sort"><option value="relevancia" ${state.sort==='relevancia'?'selected':''}>Relevancia editorial</option><option value="recientes" ${state.sort==='recientes'?'selected':''}>Más recientes</option><option value="antiguos" ${state.sort==='antiguos'?'selected':''}>Más antiguos</option><option value="titulo" ${state.sort==='titulo'?'selected':''}>Título A–Z</option></select></label></div><div id="active-filters" class="catalog-active-filters" aria-live="polite"></div><div id="results" class="catalog-results"></div><div id="catalog-pagination"></div></div></div></section>`;
+      </div></aside><div class="catalog-results-column"><div class="catalog-results-head"><strong id="result-count" role="status" tabindex="-1"></strong><label>Ordenar por<select id="catalog-sort"><option value="relevancia" ${state.sort==='relevancia'?'selected':''}>Relevancia editorial</option><option value="recientes" ${state.sort==='recientes'?'selected':''}>Más recientes</option><option value="antiguos" ${state.sort==='antiguos'?'selected':''}>Más antiguos</option><option value="titulo" ${state.sort==='titulo'?'selected':''}>Título A–Z</option></select></label></div><div id="active-filters" class="catalog-active-filters" aria-live="polite"></div><div id="results" class="catalog-results"></div><div id="catalog-pagination"></div></div></div></section></div>`;
+
+    const filterToggle = document.getElementById('catalog-filter-toggle');
+    const resultView = view.querySelector('.catalog-search-results');
+    const setFiltersOpen = open => {
+      resultView.toggleAttribute('data-filters-open', open);
+      filterToggle.setAttribute('aria-expanded', String(open));
+    };
+    setFiltersOpen(Boolean(history.state?.posicionCatalogo?.filtrosAbiertos));
+    filterToggle.addEventListener('click', () => setFiltersOpen(!resultView.hasAttribute('data-filters-open')));
 
     const render = () => {
-      const selected = rows.filter(row =>
-        matchesText(row, state.q) &&
+      const filtered = rows.filter(row =>
         (state.group === "todos" || groupOf(row) === state.group) &&
         (state.theme === "todos" || (row.temas || []).includes(state.theme)) &&
         (state.territory === "todos" || territoryNames(row).includes(state.territory)) &&
@@ -646,6 +654,7 @@
         (!state.collection || !libraryCollections[state.collection] || libraryCollections[state.collection].predicate(row)) &&
         (!selectedCase || selectedCase.resourceIds.includes(row.id))
       );
+      const selected = filtered.filter(row => matchesText(row, state.q));
       const sorters = {
         relevancia:(a,b)=>(a.prioridad_formato||6)-(b.prioridad_formato||6)||(b.prioridad_total||0)-(a.prioridad_total||0)||String(a.titulo).localeCompare(String(b.titulo),"es"),
         recientes:(a,b)=>(b.anio||0)-(a.anio||0)||String(a.titulo).localeCompare(String(b.titulo),"es"),
@@ -659,7 +668,23 @@
       const first = (state.page-1)*pageSize;
       const pageRows = selected.slice(first,first+pageSize);
       document.getElementById("result-count").textContent = `${selected.length} ${selected.length === 1 ? "recurso" : "recursos"}`;
-      document.getElementById("results").innerHTML = selected.length ? pageRows.map(catalogResultRow).join("") : `<p class="empty">No encontramos recursos con esta combinación. Prueba otra palabra o limpia los filtros.</p>`;
+      const results = document.getElementById('results');
+      if (selected.length) {
+        results.innerHTML = pageRows.map(catalogResultRow).join('');
+      } else {
+        const suggestion = norm(state.q) === 'arzenico' ? 'arsénico' : '';
+        const canSuggest = suggestion && filtered.some(row => matchesText(row, suggestion));
+        results.innerHTML = `<p class="empty">No encontramos recursos con esta combinación. ${canSuggest ? '<button type="button" class="text-link" id="suggest-query">Buscar «arsénico»</button>' : 'Prueba otra palabra o cambia los filtros.'}</p>`;
+        document.getElementById('suggest-query')?.addEventListener('click', () => {
+          document.getElementById('catalog-query').value = suggestion;
+          document.getElementById('catalog-form').requestSubmit();
+          document.getElementById('result-count').focus();
+        });
+      }
+      if (selected.length) {
+        document.getElementById('result-count').insertAdjacentHTML('beforeend',
+          `<span class="catalog-range"> · ${first + 1}–${first + pageRows.length}</span>`);
+      }
       const active = [
         state.q ? ['q',`Búsqueda: “${state.q}”`] : null,
         state.group !== 'todos' ? ['group',groupLabels[state.group]||state.group] : null,
@@ -671,11 +696,13 @@
         state.zone ? ['zone',libraryZones.find(zone=>zone.slug===state.zone)?.name||state.zone] : null,
         state.collection ? ['collection',libraryCollections[state.collection]?.label||state.collection] : null,
       ].filter(Boolean);
+      const filterCount = active.filter(([key]) => key !== 'q').length + Number(Boolean(selectedCase));
+      filterToggle.textContent = filterCount ? `Filtros (${filterCount})` : 'Filtros';
       document.getElementById('active-filters').innerHTML = active.length ? `<span>Filtros activos</span>${active.map(([key,text])=>`<button type="button" data-clear-filter="${key}">${esc(text)} <i aria-hidden="true">×</i></button>`).join('')}` : '';
       document.getElementById('catalog-pagination').innerHTML = selected.length>pageSize ? `<nav class="catalog-pagination" aria-label="Páginas de resultados"><span>Mostrando ${first+1}–${Math.min(first+pageSize,selected.length)} de ${selected.length}</span><div><button type="button" data-page="${state.page-1}" ${state.page===1?'disabled':''}>← Anterior</button>${paginationItems(state.page,totalPages).map(item=>item==='…'?'<span class="pagination-ellipsis">…</span>':`<button type="button" data-page="${item}" aria-current="${item===state.page?'page':'false'}">${item}</button>`).join('')}<button type="button" data-page="${state.page+1}" ${state.page===totalPages?'disabled':''}>Siguiente →</button></div></nav>` : '';
       document.querySelectorAll('[data-group]').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.group===state.group)));
       document.querySelectorAll('[data-clear-filter]').forEach(button=>button.addEventListener('click',()=>{const key=button.dataset.clearFilter;state[key]=['q','zone','collection'].includes(key)?'':'todos';if(key==='q')document.getElementById('catalog-query').value='';const control={theme:'filter-theme',territory:'filter-territory',type:'filter-type',year:'filter-year',relation:'filter-relation'}[key];if(control)document.getElementById(control).value='todos';state.page=1;sync();}));
-      document.querySelectorAll('[data-page]').forEach(button=>button.addEventListener('click',()=>{state.page=Number(button.dataset.page);sync();document.querySelector('.catalog-results-head')?.scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth',block:'start'});}));
+      document.querySelectorAll('[data-page]').forEach(button=>button.addEventListener('click',()=>{state.page=Number(button.dataset.page);sync();document.getElementById('result-count').focus({preventScroll:true});document.querySelector('.catalog-results-head')?.scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth',block:'start'});}));
     };
     const sync = () => {
       render();
@@ -692,7 +719,8 @@
       if (selectedCase) p.caso = selectedCase.slug;
       if (state.sort !== "relevancia") p.orden = state.sort;
       if (state.page > 1) p.pagina = state.page;
-      history.replaceState(null, "", route("catalogo", p));
+      const hash = route("catalogo", p);
+      history.replaceState(location.hash === hash ? history.state : null, "", hash);
     };
     document.getElementById("catalog-form").addEventListener("submit", event => { event.preventDefault(); state.q = document.getElementById("catalog-query").value.trim(); state.page=1; sync(); });
     document.querySelectorAll("[data-group]").forEach(button => button.addEventListener("click", () => { state.group = button.dataset.group; state.page=1; document.querySelectorAll("[data-group]").forEach(b => b.setAttribute("aria-pressed", String(b === button))); sync(); }));
@@ -932,7 +960,7 @@
         <div class="shell territories-breadcrumb"><span>Chile</span><i aria-hidden="true">›</i><strong id="territories-region-crumb">${esc(selected.name)}</strong><a href="${route('catalogo',{vista:'catalogo'})}">Ver todos los recursos <span aria-hidden="true">→</span></a></div>
         <div class="shell territories-atlas-intro"><div><p class="eyebrow">Cartografía de la colección</p><h2>Chile</h2></div><p>Esta cartografía permite leer la colección desde una escala regional. Cada región incluye un perfil ambiental breve, claves temáticas, territorios documentados y acceso a los recursos vinculados.</p></div><div class="shell territories-atlas-grid">
           <div class="territories-map-story">
-            
+
             <div class="territories-map-figure"><label for="territories-region-select">Seleccionar región</label><select id="territories-region-select">${regionItems.map(item=>`<option value="${esc(item.id)}" ${item.id===selected.id?'selected':''}>${esc(item.name)} · ${item.count}</option>`).join('')}</select>${territoryAtlasMap(regionItems,selected.id)}<div class="territories-map-label territories-map-label-north">Norte</div><div class="territories-map-label territories-map-label-south">Sur austral</div><div class="territories-map-scale" aria-hidden="true"><span>N</span><i></i><small>0&nbsp;&nbsp;&nbsp;500&nbsp;&nbsp;&nbsp;1.000 km</small></div>${mapCredit}</div>
           </div>
           <div class="territories-region-context" id="territories-region-context" aria-live="polite">${territoryRegionContext(selected)}</div>
@@ -954,7 +982,7 @@
     const shortName = item.slug === 'quintero-puchuncavi-ventanas' ? 'Quintero–Puchuncaví–Ventanas' : item.name;
     const linked = caseResources(item);
     return `<a class="case-index-row" data-case="${item.slug}" href="${route('caso',{caso:item.slug})}">
-      
+
       <span class="case-index-copy"><small>${esc(item.region)} · publicaciones ${esc(caseYearRange(item))}</small><strong>${esc(shortName)}</strong><span>${esc(item.summary)}</span></span>
       <span class="case-index-count">${linked.length} ${linked.length===1?'recurso':'recursos'} →</span>
     </a>`;
@@ -1098,8 +1126,8 @@
   const resourceEntries = row => (payload.cases || []).flatMap(c=>c.entries).filter(e=>e.resource_id===row.id);
 
   function resourceVisual(row) {
-    if (row.id !== 29) return '';
-    return `<figure class="resource-visual"><img src="assets/video-s_EiX1i1Ovk.jpg" alt="Vista previa del Tercer Seminario de Medioambiente y Salud" width="1280" height="720" loading="eager"><figcaption>Vista previa del recurso audiovisual en su fuente original.</figcaption></figure>`;
+    // Sin miniaturas de terceros: la imagen de YouTube del recurso 29 tenía derechos de su autor.
+    return '';
   }
 
   function caseEvidence(row, entries = resourceEntries(row)) {
@@ -1133,19 +1161,22 @@
     return items.length ? items.join('') : `<p class="resource-related-empty">${emptyLabel}</p>`;
   }
 
-  function resourceCitation(row, entries) {
-    if (row.fecha_revision_documental) return [[row.autor_ponente || row.institucion, '(' + (row.anio || 's. f.') + ').', String(row.titulo_fuente||row.titulo).replace(/\.$/,'') + '.', row.institucion ? row.institucion + '.' : '', row.doi ? 'https://doi.org/' + row.doi : row.url].join(' ')];
-    const supplied = unique(entries.map(entry=>entry.cita_recomendada).filter(Boolean));
-    if (supplied.length) return supplied;
-    const author = row.autor_ponente || row.institucion || 'Autoría no consignada';
-    const publication = row.institucion && row.institucion !== author ? ` ${row.institucion}.` : '';
-    return [`${author} (${row.anio || 's. f.'}). ${row.titulo}.${publication}`];
+  function resourceCitation(cita) {
+    const title = cita.titulo ? cita.titulo.replace(/[.]$/, '') : '[Título bibliográfico por confirmar]';
+    const authors = cita.autoria.join('; ') + (cita.rol ? ` (${cita.rol})` : '');
+    const parts = [authors, `(${cita.anio || 's. f.'}).`, `${title}.`];
+    if (cita.version) parts.push(cita.version.replace(/[.]$/, '') + '.');
+    const issue = cita.numero ? `(${cita.numero})` : '';
+    const journal = [cita.publicacion, (cita.volumen || '') + issue, cita.paginas || cita.numero_articulo]
+      .filter(Boolean).join(', ');
+    if (journal && journal !== authors) parts.push(journal.replace(/[.]$/, '') + '.');
+    const url = cita.doi ? 'https://doi.org/' + cita.doi : cita.url;
+    return `<p>${esc(parts.filter(Boolean).join(' '))} <a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(url)}</a></p>`;
   }
 
-  function documentaryHeader(row) { return ''; }
   function documentaryBody(row) {
     const f=row.ficha;
-    return `<section class="resource-section documentary-body"><h2>De qué trata</h2><p>${esc(f.resumen)}</p><p class="meta">${esc(f.advertencia||'')}</p>${(f.enlaces_relacionados||[]).length?`<h3>Enlaces relacionados</h3>${f.enlaces_relacionados.map(l=>`<p><a href="${esc(l.url)}" target="_blank" rel="noopener noreferrer">${esc(l.titulo)}</a></p>`).join("")}`:""}<h3>Palabras clave</h3><div class="tag-list">${f.palabras_clave.map(k=>`<a class="tag" href="${route('catalogo',{vista:'catalogo',q:k})}">${esc(k)}</a>`).join('')}</div><button type="button" class="text-link" id="editorial-toggle" aria-expanded="false" aria-controls="editorial-info">Ver revisión editorial</button><div id="editorial-info" hidden><h3>Alcance de la consulta</h3><p>${esc(f.interno.alcance)}</p><p>Autoría completa: ${esc(f.autoria_completa.join('; '))}</p><p>Título de referencia: ${esc(f.interno.titulo_original)}</p><ul>${f.interno.pendientes.map(p=>`<li>${esc(p.texto)}</li>`).join('')}</ul></div></section>`;
+    return `<section class="resource-section documentary-body"><h2>De qué trata</h2><p>${esc(f.resumen)}</p><p class="meta">${esc(f.advertencia||'')}</p>${(f.enlaces_relacionados||[]).length?`<h3>Enlaces relacionados</h3>${f.enlaces_relacionados.map(l=>`<p><a href="${esc(l.url)}" target="_blank" rel="noopener noreferrer">${esc(l.titulo)}</a></p>`).join("")}`:""}<h3>Palabras clave</h3><div class="tag-list">${f.palabras_clave.map(k=>`<a class="tag" href="${route('catalogo',{vista:'catalogo',q:k})}">${esc(k)}</a>`).join('')}</div><button type="button" class="text-link" id="editorial-toggle" aria-expanded="false" aria-controls="editorial-info">Ver revisión editorial</button><div id="editorial-info" hidden><h3>Alcance de la consulta</h3><p>${esc(f.alcance_revision || '')}</p>${row.cita.autoria.length ? `<p>Autoría consignada: ${esc(row.cita.autoria.join('; '))}</p>` : ''}</div></section>`;
   }
   function documentaryFacts(row) {const f=row.ficha;return `<dt>Tipo de estudio o documento</dt><dd>${esc(f.tipo_estudio||f.tipo)}</dd><dt>Idioma de la versión consultada</dt><dd>${esc(f.idioma||'Por confirmar')}</dd>${f.doi?`<dt>DOI</dt><dd><a href="https://doi.org/${esc(f.doi)}" target="_blank" rel="noopener noreferrer">${esc(f.doi)}</a></dd>`:''}${f.isbn?`<dt>ISBN</dt><dd>${esc(f.isbn)}</dd>`:''}`;}
   function resource(params) {
@@ -1157,8 +1188,9 @@
     const themeLinks = (row.temas || []).map(code=>`<a href="${route('tema',{tema:code})}"><span>${esc(label('temas',code))}</span><i aria-hidden="true">›</i></a>`);
     const territoryLinks = territoryObjects(row).map(territory=>`<a href="${route('territorio',{territorio:territory.name})}"><span>${esc(territory.name)}</span><i aria-hidden="true">›</i></a>`);
     const importance = resourceRelation(row, entries).map(text=>`<p>${esc(text)}</p>`).join('');
-    const citations = resourceCitation(row, entries).map(citation=>`<p>${esc(citation)}</p>`).join('');
-    view.innerHTML = `<section class="shell resource-layout"><article class="resource-main"><a class="back-link" href="${route("catalogo")}">← Volver al catálogo</a><header class="resource-header"><p class="eyebrow">${esc(typeLabel(row))}</p><h1 class="resource-title">${esc(row.titulo)}</h1><p class="meta resource-byline">${esc(byline(row))}</p><p class="resource-summary">${esc(row.descripcion || "Ficha sin resumen editorial.")}</p></header>${documentaryHeader(row)}${resourceVisual(row)}${casesHtml?`<div class="case-resource-links">${casesHtml}</div>`:''}${documentaryBody(row)}<section class="resource-section resource-citation"><h3>Cita sugerida</h3>${citations}</section><p class="resource-library-note">La Biblioteca conserva los metadatos y el enlace. El material permanece alojado y administrado por su fuente original.</p></article><aside class="resource-aside" aria-label="Información del recurso"><div class="resource-aside-panel"><h2>Información del recurso</h2><dl><dt>Institución o publicación</dt><dd>${esc(row.institucion||"Sin identificar")}</dd><dt>Autoría o participación</dt><dd>${esc(row.autor_ponente||"No consignada")}${row.rol_autoria?` · ${esc(row.rol_autoria)}`:""}</dd><dt>Año</dt><dd>${esc(row.anio||"Sin precisar")}</dd><dt>Formato</dt><dd>${esc((row.formatos||[]).map(f=>label("formatos",f)).join(" · ")||"Sin clasificar")}</dd><dt>Relación con salud ambiental</dt><dd>${esc(row.tipo_relacion_salud_ambiental||"Por determinar")}</dd>${documentaryFacts(row)}<dt>${row.fecha_revision_documental ? "Estado técnico anterior del enlace" : "Estado del enlace"}</dt><dd class="resource-link-status status-${esc(row.estado_url||'pendiente')}">${esc(statusLabel(row))}</dd></dl><a class="source-button" href="${esc(row.url)}" target="_blank" rel="noopener noreferrer">Abrir fuente original <span aria-hidden="true">↗</span></a><section class="resource-related"><h3>Temas relacionados</h3><nav aria-label="Temas relacionados">${relatedList(themeLinks,'Sin temas asignados')}</nav></section><section class="resource-related"><h3>Territorios relacionados</h3><nav aria-label="Territorios relacionados">${relatedList(territoryLinks,'Sin territorio asignado')}</nav></section><p class="resource-aside-note">La Biblioteca organiza y describe el recurso para facilitar su consulta y conserva el vínculo con la fuente original.</p></div></aside></section>`;
+    const previous = history.state?.retornoCatalogo;
+    const returnHash = typeof previous === 'string' && previous.startsWith('#catalogo?') ? previous : null;
+    view.innerHTML = `<section class="shell resource-layout"><article class="resource-main"><a class="back-link" href="${esc(returnHash || route("catalogo",{vista:"catalogo"}))}">${returnHash ? "← Volver al catálogo" : "Ir al catálogo"}</a><header class="resource-header"><p class="eyebrow">${esc(typeLabel(row))}</p><h1 class="resource-title">${esc(row.titulo)}</h1><p class="meta resource-byline">${esc(byline(row))}</p><p class="resource-summary">${esc(row.descripcion || "Ficha sin resumen editorial.")}</p><a class="source-button" href="${esc(row.url)}" target="_blank" rel="noopener noreferrer">Abrir fuente original <span aria-hidden="true">↗</span></a></header>${resourceVisual(row)}${casesHtml?`<div class="case-resource-links">${casesHtml}</div>`:''}${documentaryBody(row)}<section class="resource-section resource-citation"><h3>${row.cita.titulo && row.cita.anio ? "Cita sugerida" : "Referencia parcial"}</h3>${resourceCitation(row.cita)}</section><p class="resource-library-note">La Biblioteca conserva los metadatos y el enlace. El material permanece alojado y administrado por su fuente original.</p></article><aside class="resource-aside" aria-label="Información del recurso"><div class="resource-aside-panel"><h2>Información del recurso</h2><dl><dt>Institución o publicación</dt><dd>${esc(row.institucion||"Sin identificar")}</dd><dt>Autoría o participación</dt><dd>${esc(row.autor_ponente||"No consignada")}${row.rol_autoria?` · ${esc(row.rol_autoria)}`:""}</dd><dt>Año</dt><dd>${esc(row.anio||"Sin precisar")}</dd><dt>Formato</dt><dd>${esc((row.formatos||[]).map(f=>label("formatos",f)).join(" · ")||"Sin clasificar")}</dd><dt>Relación con salud ambiental</dt><dd>${esc(row.tipo_relacion_salud_ambiental||"Por determinar")}</dd>${documentaryFacts(row)}<dt>${row.fecha_revision_documental ? "Estado técnico anterior del enlace" : "Estado del enlace"}</dt><dd class="resource-link-status status-${esc(row.estado_url||'pendiente')}">${esc(statusLabel(row))}</dd></dl><section class="resource-related"><h3>Temas relacionados</h3><nav aria-label="Temas relacionados">${relatedList(themeLinks,'Sin temas asignados')}</nav></section><section class="resource-related"><h3>Territorios relacionados</h3><nav aria-label="Territorios relacionados">${relatedList(territoryLinks,'Sin territorio asignado')}</nav></section><p class="resource-aside-note">La Biblioteca organiza y describe el recurso para facilitar su consulta y conserva el vínculo con la fuente original.</p></div></aside></section>`;
   }
 
   function about() {
@@ -1177,22 +1209,42 @@
     const name = separator < 0 ? raw : raw.slice(0,separator);
     const query = separator < 0 ? '' : raw.slice(separator+1);
     const params = new URLSearchParams(query);
+    const savedPosition = name === 'catalogo' ? history.state?.posicionCatalogo : null;
     const dataScroll = name === "datos" && view.querySelector(".data-product-tabs") ? window.scrollY : null;
     ({ inicio: home, catalogo: () => catalog(params), temas: topics, cruce: () => themeCross(params), tema: () => topic(params), territorios: territories, territorio: () => territory(params), datos: () => dataPage(params), casos: casesLanding, caso: () => caseOverview(params), cronologia: () => caseChronology(params), recurso: () => resource(params), acerca: about }[name] || (() => notFound("Página no encontrada")))();
     document.title = name === "inicio" ? "Biblioteca Digital de Salud Ambiental de Chile" : `${view.querySelector("h1")?.textContent || "Biblioteca"} · Biblioteca de Salud Ambiental`;
-    window.scrollTo({ top: dataScroll ?? 0, behavior: "instant" });
+    window.scrollTo({ top: savedPosition?.scrollY ?? dataScroll ?? 0, behavior: "instant" });
     const editorialToggle=document.getElementById('editorial-toggle');if(editorialToggle)editorialToggle.onclick=()=>{const panel=document.getElementById('editorial-info');panel.hidden=!panel.hidden;editorialToggle.setAttribute('aria-expanded',String(!panel.hidden));};
     const navRoute = ({tema:'temas',cruce:'temas',territorio:'territorios',caso:'casos',cronologia:'casos',recurso:'catalogo'}[name]||name);
     document.querySelectorAll('.site-header nav a').forEach(a => a.setAttribute('aria-current', a.hash === `#${navRoute}` ? 'page' : 'false'));
     document.querySelector('.site-header nav').classList.remove('is-open');
     document.querySelector('.menu-toggle').setAttribute('aria-expanded', 'false');
-    (dataScroll !== null ? view.querySelector('.data-product-tabs a[aria-current="page"]') : document.getElementById('main'))?.focus({preventScroll:true});
+    const selectedLink = savedPosition && [...view.querySelectorAll('#results a')].find(link =>
+      link.hash === savedPosition.href && link.classList.contains('text-link') === savedPosition.secondary);
+    (selectedLink || (dataScroll !== null ? view.querySelector('.data-product-tabs a[aria-current="page"]') : document.getElementById('main')))?.focus({preventScroll:true});
   }
 
   // Local section links must not replace the application's hash route.
   view.addEventListener('click', event => {
     const link = event.target.closest('a[href^="#"]');
     if (!link || event.defaultPrevented || event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+    if (link.closest('#results') && link.hash.startsWith('#recurso?')) {
+      event.preventDefault();
+      const posicionCatalogo = {
+        scrollY: window.scrollY, href: link.hash, secondary: link.classList.contains('text-link'),
+        filtrosAbiertos: view.querySelector('.catalog-search-results').hasAttribute('data-filters-open')
+      };
+      const retornoCatalogo = location.hash;
+      history.replaceState({posicionCatalogo}, '');
+      history.pushState({retornoCatalogo}, '', link.hash);
+      renderRoute();
+      return;
+    }
+    if (link.matches('.back-link') && link.hash === history.state?.retornoCatalogo) {
+      event.preventDefault();
+      history.back();
+      return;
+    }
     const target = document.getElementById(link.getAttribute('href').slice(1));
     if (!target || !view.contains(target)) return;
     event.preventDefault();
@@ -1217,6 +1269,7 @@
       menu.setAttribute('aria-expanded', 'false'); navigation.classList.remove('is-open'); menu.focus();
     }
   });
+  history.scrollRestoration = "manual";
   window.addEventListener("hashchange", renderRoute);
   renderRoute();
 })();

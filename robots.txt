@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://biblioteca-salud-ambiental-web.pablo-aguirre-araya.workers.dev/sitemap.xml
